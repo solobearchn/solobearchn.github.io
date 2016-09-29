@@ -13,12 +13,15 @@
 ## **AsyncTask异步框架**
 
 **Usage**
-
-1.  **``` new AsyncTask().execute(Params...params)```** :UI线程中调用，触发异步任务AsyncTask
-2.  **``` @Override onPreExecute() ```**:在UI线程中执行，异步任务启动前的准备工作
-3.  **``` @Override doInBackground(Params...)```**:在任务子线程中执行，通常用于理耗时任务。在此方法中用户可以自行调用``` publishProgress(Progress...)```，发送``` MESSAGE_POST_PROGRESS```消息至主线程，进而触发主线程中的方法``` onProgressUpdate(Progress...)```
-4.  **```@Override onProgressUpdate(Progress...)```**:后台任务调用了``` publishProgress()```后，主线程对消息的回应处理，用于更新UI
-5.  **```@Override onPostExecute(Result) ```**:任务子线程执行完毕后触发结束消息的处理方法，收尾工作。
+1.  ```Async<Params,Progress,Result>()```中的几个泛型参数：
+    ```Params...params```是执行```AsyncTask.execute(Params...)```时使用的参数，实际上传入```doInBackground(Params...)```作为参数;
+    ```Progress... values```表示进度，可在调用``` publishProgress(Progress...)```时将进度送至主消息循环中；进度同样会传入用户override的```onProgressUpdate(Progress)```作为方法参数；
+    ```Result result```是后台任务方法```doInBackgroun(Params...)```的返回值，即任务结果,作为```onPostExecute(Result)```方法的参数。
+2.  **``` new AsyncTask().execute(Params...params)```** :UI线程中调用，触发异步任务AsyncTask
+3.  **``` @Override onPreExecute() ```**:在UI线程中执行，异步任务启动前的准备工作
+4.  **``` @Override doInBackground(Params...)```**:在任务子线程中执行，通常用于理耗时任务。在此方法中用户可以自行调用``` publishProgress(Progress...)```，发送``` MESSAGE_POST_PROGRESS```消息至主线程，进而触发主线程中的方法``` onProgressUpdate(Progress...)```
+5.  **```@Override onProgressUpdate(Progress...)```**:后台任务调用了``` publishProgress()```后，主线程对消息的回应处理，可用于更新UI
+6.  **```@Override onPostExecute(Result) ```**:任务子线程执行完毕后触发结束消息的处理方法，收尾工作。
 
 ---
 
