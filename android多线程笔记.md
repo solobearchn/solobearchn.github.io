@@ -17,6 +17,7 @@
     ```Params...params```是执行```AsyncTask.execute(Params...)```时使用的参数，实际上传入```doInBackground(Params...)```作为参数;
     ```Progress... values```表示进度，可在调用``` publishProgress(Progress...)```时将进度送至主消息循环中；进度同样会传入用户override的```onProgressUpdate(Progress)```作为方法参数；
     ```Result result```是后台任务方法```doInBackgroun(Params...)```的返回值，即任务结果,作为```onPostExecute(Result)```方法的参数。
+    
 2.  **``` new AsyncTask().execute(Params...params)```** :UI线程中调用，触发异步任务AsyncTask
 
 3.  **``` @Override onPreExecute() ```**:在UI线程中执行，异步任务启动前的准备工作
