@@ -52,10 +52,10 @@ struct binder_transaction_data {
 ![image](http://gityuan.com/images/binder/addService/add_media_player_service.png)
 *来源：Gityuan* [Binder系列5—注册服务(addService)](http://gityuan.com/2015/11/14/binder-add-service/)
 
-IBinder与Service业务接口INTERFACE之间的关系如上图所示，图中没有指出的是BpMediaPlayerService类对BpBinder的聚合关系
+IBinder与Service业务接口INTERFACE之间的关系如上图所示，图中没有指出的是BpMediaPlayerService类对BpBinder的聚合关系。
 
 1.  Binder实体对象：BBinder，Binder服务的提供者，Binder机制中提供服务的Service必须继承自BBinder类；
-2.  Binder引用对象：BpBinder(handle)，Server的实体对象在Client进程的代表。客户进程拿到handle后，可以
+2.  Binder引用对象：BpBinder(handle)，存在于Client端，handle指向服务端。
 3.  Binder代理对象：BpINTERFACE(BpBinder(handle)):实现了Service服务中的业务接口INTERFACE的接口对象，通过代理对象，Client能够像使用本地对象一样使用远端的实体对象提供的服务。
 4.  IBinder对象：BBinder+BpBinder的统称。
 
@@ -253,13 +253,42 @@ int main(int argc __unused, char** argv)
 
 每个Client进程都要对本进程中Binder引用对象进行生命周期管理，这里打开了/dev/binder驱动,mmap了1MB空间用于binder事务。
 
-    defaultServiceManager()
+    defaultServiceManager():获取ServiceManager，准确的说是获取ServiceManager的代理
 
-获取ServiceManager，准确的说是获取serviceManager的代理。通过IInterface的宏展开，转化得到了最终的ServiceManager代理对象：new BpServiceManager(),其成员变量mRemote=BpBinder(0);0这个handle就指向了ServiceManagerService这个服务。这个过程中IInterface的asInterface(sp<IBinder> obj)比较重要,简单说来就是在Client端调用则创建BpBinder代理对象，在Service端则直接返回指针无需创建。
+这个函数经过IIntergace.h的宏展开后，进入了ISM.asInterface()函数：
+
+```
+ android::sp<IServiceManager> IServiceManager::asInterface(const android::sp<android::IBinder>& obj)
+{
+    android::sp<IServiceManager> intr;
+    if(obj != NULL) {
+        intr = static_cast<IServiceManager *>(obj->queryLocalInterface(IServiceManager::descriptor).get());
+        if (intr == NULL) {
+            intr = new BpServiceManager(obj);
+        }
+    }
+    return intr;
+}
+```
+
+注意到判断函数queryLocalInterface(),这是IBinder接口中的函数，默认返回null。BpBinder类并没有重写这个函数，intr=null，asInterface返回new BpServiceManager(BpBinder),这样就获取了ServiceManager的代理对象。也就是说，**Client拿到Binder引用对象后，就得到了Binder代理对象**，
+
+而如果是Binder实体对象，继承自BnInterface，而BnInterface重写了这个函数，判断对象的描述字符串descriptor是否和本类相同，如果符合就返回这个指针。
+```
+template<typename INTERFACE>
+inline sp<IInterface> BnInterface<INTERFACE>::queryLocalInterface(
+        const String16& _descriptor)
+{
+    if (_descriptor == INTERFACE::descriptor) return this;
+    return NULL;
+}
+```
+
+从CS两端的角度来看这个，Client端获取的必定是引用对象，因此使用BpBinder创建了代理对象。Service端收到实体对象后，如果类描述符合，则可以直接使用本进程中的对象，因此接返回对象指针。
 
     MediaPlayerService::instantiate()    
 
-BpServiceManager(BpBinder(0)).addService(Str name,new MPS)，接着进入IServiceManager的业务逻辑，利用了ServiceManager的远程对象(引用对象)BpHandle(0)。接着进入BpBinder.transact过程，实质上还是将任务交给了IPCThreadState:```IPC->transact(mHandle, code, data, reply,flags)```，对于Client来说，所需数据就通过**reply**获取。
+这一行也就是```BpServiceManager(BpBinder(0)).addService(Str name,new MPS)```，接着进入IServiceManager的业务逻辑，利用了指向ServiceManager的引用对象BpBinder(0)。接着进入BpBinder.transact过程，实质上还是将任务交给了IPCThreadState:```IPC->transact(mHandle, code, data, reply,flags)```，对于Client来说，所需数据就通过**reply**获取。
 
 每个线程都有一个IPCThreadState，成员变量mProcess保存了ProcessState变量(每个进程只有一个)，mIn用来接收来自Binder设备的数据，mOut用来存储发往Binder设备的数据，默认大小均为256字节。IPCThreadState进行transact事务处理分3部分：**errorCheck()数据错误检查，writeTransactionData()写入传输数据，waitForResponse()等待驱动数据响应**。
 
@@ -295,7 +324,7 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
     return result;
 }
 ```
-在驱动对Binder对象的转换过程中提到，Client发送的Binder对象进入Service所在的目标进程时，其target、cookier都做了转换。对于经驱动处理后的Binder对象，由于Service进程自身就是Binder实体对象，因此执行了以上的```BBinder->transact()```函数。```BBinder::transact()```函数又调用了Binder实体类的```onTransact()```函数。前面分析过libbinder中的类和接口，Service类继承了BnExampleService并重写了onTransact()，这个onTransact中使用了ServiceManager中的方法体，**业务逻辑就在这里执行**。
+在驱动对Binder对象的转换过程中提到，Client发送的Binder对象进入Service所在的目标进程时，其target、cookier都做了转换。对于经驱动处理后的Binder对象，由于Service进程自身就是Binder实体对象，因此执行了以上的```BBinder->transact()```函数。```BBinder::transact()```函数又调用了Binder实体类的```onTransact()```函数。前面分析过libbinder中的类和接口，Service类继承了BnExampleService并重写了onTransact()，这个onTransact中使用了ServiceManager中的函数体，**业务逻辑就在这里执行**。
 
 既然使用transaction描述过程，表明Binder调用过程是一个事务，需要符合ACID原则。下图中BC_TRANSACTION和BR_TRANSACTION是一个完整的事务过程，BC_REPLY和BR_REPLY是一个完整的事务过程。Client向Server请求的过程是一个同步过程，Client需要等待driver中的reply，在此期间线程阻塞。
 
