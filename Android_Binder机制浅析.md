@@ -169,12 +169,7 @@ struct binder_ref {
 
 根据上面的过程，可以简要分析常用场景中Binder对象在整个传输过程中做了怎样的转换：
 
-```
-graph LR
-A(Server/Client)-->|writeStrongBinder|B(Driver)
-B-->|readStrongBinder|C(Server/Client)
-
-```
+![image](http://img.my.csdn.net/uploads/201610/14/1476408704_3527.png)
 Binder机制中CS两端通信的数据单元是Parcel，Binder对象写入Parcel中时需要使用```writeStrongBinder```函数，读取Binder对象则使用```readStrongBinder```,当然这个过程中Binder对象仍然要用flat_binder_object结构体表示。
 
 当某个Server/Service要向ServiceManager注册时，发送本地的Binder实体对象，写入Parcel中的Binder如下：
@@ -272,12 +267,13 @@ BpServiceManager(BpBinder(0)).addService(Str name,new MPS)，接着进入IServic
 > kernal\drivers\staging\android\binder.c
 
 进入ioctl后，经由```binder_thread_write()```中的判断分支进入```binder_transaction()```过程。binder_transaction()内容比较多，主要步骤是：
+
 1.  找到代表目标进程的节点，handle=0则指向ServiceManager
 2.  搜寻目标线程，使用目标线程中的todo队列
 3.  对本次Binder调用事务过程创建binder_transaction结构体，设置相应的数据
 4.  在目标进程的缓冲区分配空间，并复制用户进程的数据到内核
 5.  **处理传输的Binder对象**，前面已经分析了这个过程
-6.  将本次调用的binder_transaction结构体链接到线程的transaction_stack列表中
+6.  将本次调用的binder_transaction结构体链接到线程的transaction_stack列表中.
 
 binder_thread_write()调用结束后，将继续binder_thread_read()处理当前线程和进程中的todo队列。
 
