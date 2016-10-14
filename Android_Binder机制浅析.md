@@ -260,7 +260,7 @@ int main(int argc __unused, char** argv)
 
 BpServiceManager(BpBinder(0)).addService(Str name,new MPS)，接着进入IServiceManager的业务逻辑，利用了ServiceManager的远程对象(引用对象)BpHandle(0)。接着进入BpBinder.transact过程，实质上还是将任务交给了IPCThreadState:```IPC->transact(mHandle, code, data, reply,flags)```，对于Client来说，所需数据就通过**reply**获取。
 
-每个线程都有一个IPCThreadState，成员变量mProcess保存了ProcessState变量(每个进程只有一个)，mIn用来接收来自Binder设备的数据，mOut用来存储发往Binder设备的数据，默认大小均为256字节。PCThreadState进行transact事务处理分3部分：**errorCheck()数据错误检查，writeTransactionData()写入传输数据，waitForResponse()等待驱动数据响应**。
+每个线程都有一个IPCThreadState，成员变量mProcess保存了ProcessState变量(每个进程只有一个)，mIn用来接收来自Binder设备的数据，mOut用来存储发往Binder设备的数据，默认大小均为256字节。IPCThreadState进行transact事务处理分3部分：**errorCheck()数据错误检查，writeTransactionData()写入传输数据，waitForResponse()等待驱动数据响应**。
 
 其中，waitForResponse()是一个死循环，利用```IPC.talkWithDriver()```与驱动之间通信,```IPC.talkWithDriver()```中又调用了```ioctl(mProcess->mDriverFD, BINDER_WRITE_READ, &bwr)```进入与内核，开始于驱动的通信,ioctl调用了内核中的binder.c。
 
@@ -300,6 +300,7 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
 
 ![image](http://img.my.csdn.net/uploads/201610/14/1476404609_2669.png)
 
+
 ---
 
 ## 6 Binder机制中的多线程
@@ -338,7 +339,7 @@ case BR_SPAWN_LOOPER:
         mProcess->spawnPooledThread(false);
         break;
 ```
-PoolThread类的执行体是threadLoop()函数，函数里是```IPCThreadState::self()->joinThreadPool(mIsMain)```，也就是说**线程池里的线程都是在执行```joinThreadPool(bool)```**。对于第一个线程，这是由应用层创建的，isMain=true；**其他线程均是驱动告知目标进程创建的，isMain=false。**
+PoolThread类的执行体是IPC.threadLoop()函数，函数里是```IPCThreadState::self()->joinThreadPool(mIsMain)```，也就是说线程池里的线程都是在执行```joinThreadPool(bool)```。对于第一个线程，这是由应用层创建的，isMain=true；其他线程均是驱动告知目标进程创建的，isMain=false。这里也可以发现，Binder机制下的**所有线程都有一个关联的IPCThreadState对象，与驱动之间的通信实际上都是由这个IPCThreadState执行的**。
 
 该看看线程执行体了：
 
