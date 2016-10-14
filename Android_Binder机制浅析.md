@@ -53,6 +53,7 @@ struct binder_transaction_data {
 *来源：Gityuan* [Binder系列5—注册服务(addService)](http://gityuan.com/2015/11/14/binder-add-service/)
 
 IBinder与Service业务接口INTERFACE之间的关系如上图所示，图中没有指出的是BpMediaPlayerService类对BpBinder的聚合关系
+
 1.  Binder实体对象：BBinder，Binder服务的提供者，Binder机制中提供服务的Service必须继承自BBinder类；
 2.  Binder引用对象：BpBinder(handle)，Server的实体对象在Client进程的代表。客户进程拿到handle后，可以
 3.  Binder代理对象：BpINTERFACE(BpBinder(handle)):实现了Service服务中的业务接口INTERFACE的接口对象，通过代理对象，Client能够像使用本地对象一样使用远端的实体对象提供的服务。
@@ -254,7 +255,7 @@ int main(int argc __unused, char** argv)
 
     defaultServiceManager()
 
-获取ServiceManager，准确的说是获取serviceManager的代理。通过IInterface的宏展开，转化得到了最终的ServiceManager代理对象：new BpServiceManager(),其成员变量mRemote=BpBinder(0);0这个handle就指向了ServiceManagerService这个服务。这个过程中IInterface的**asInterface()**比较重要。
+获取ServiceManager，准确的说是获取serviceManager的代理。通过IInterface的宏展开，转化得到了最终的ServiceManager代理对象：new BpServiceManager(),其成员变量mRemote=BpBinder(0);0这个handle就指向了ServiceManagerService这个服务。这个过程中IInterface的asInterface(sp<IBinder> obj)比较重要,简单说来就是在Client端调用则创建BpBinder代理对象，在Service端则直接返回指针无需创建。
 
     MediaPlayerService::instantiate()    
 
