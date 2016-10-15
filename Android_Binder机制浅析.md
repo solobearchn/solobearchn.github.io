@@ -9,7 +9,7 @@ Binder机制作为Android的进程间通信方式(IPC)，采用mmap共享内存�
 应用层与内核中的driver之间的IO操作使用统一的接口函数```ioctl(fd,CMD,&bwr)```，通过switch(CMD)进行相应的IO操作，所传输的数据则存放在binder_read_write结构体中。
 
 
-```
+``` c++
 struct binder_write_read {
  binder_size_t write_size;
  binder_size_t write_consumed;
@@ -20,7 +20,7 @@ struct binder_write_read {
 };
 ```
 存放在bwr的buffer中的数据也有格式，即消息ID+binder_transaction_data
-```
+``` c++
 struct binder_transaction_data {
  union {
  __u32 handle;
@@ -64,7 +64,7 @@ IBinder与Service业务接口INTERFACE之间的关系如上图所示，图中没
 Client当然可以跳过代理对象，直接通过Binder引用对象BpBinder(handle)使用服务，但是代理对象具备了处理业务的接口，依靠native层的**libbinder框架带来业务逻辑接口的统一**，Client就像使用本地接口一样使用远程的服务接口。
 
 下面可以简单探讨一下Binder机制下服务类的写法。以ExmapleService为例，其业务逻辑接口由IExampleService定义，业务接口为```virtual int getData();```。建立的ExampleService类则实现了业务接口
-```
+``` c++
 class ExampleService : public BnExampleService
 {
 public:
@@ -75,7 +75,7 @@ private:
 
 ```
 相应的，BnExmapleService中的onTransact()：
-```
+``` c++
 BnExampleService::onTransact(int code, Parcel &data, Parcel* reply)
 {
     switch(code)
@@ -88,7 +88,7 @@ BnExampleService::onTransact(int code, Parcel &data, Parcel* reply)
 
 ```
 代理类BpExmaple应当这样实现
-```
+``` c++
 class BpExampleService:public BpInterface<IExampleService>
 {
 public:
@@ -109,7 +109,7 @@ Client获得代理类BpExample，其引用对象remote=BpBinder(handle)。引用
 Binder对象在传输中是跨进程的，其生命周期的管理是一个重点。服务的实体BBinder死亡后，Client进程中的引用对象也应当删除。Client进程中的ProcessState管理本进程中的所有Binder引用类的创建和释放，而**引用对象和实体对象之间的关联**则由驱动负责管理。Driver驱动维护了一颗红黑树，每个进程中的binder_proc结构体都插入树中，每个进程中的binder_proc都保存了Binder对象的node节点表和node_ref引用表。Binder对象的插入和查询就是在这棵树中执行的，
 
 在传输过程中，Binder实体对象和引用对象均使用**flat_binder_object结构体来表示Binder对象**。
-```
+``` c++
 struct flat_binder_object {
  __u32 type;
  __u32 flags;
@@ -124,7 +124,7 @@ struct flat_binder_object {
 
 Driver中的一个重要工作就是**处理传递中的Binder对象**，driver会将flat_binder_object结构体拆开并做相应操作。
 
-```
+``` c++
 switch (type) {
     case BINDER_TYPE_BINDER:
     case BINDER_TYPE_WEAK_BINDER:
@@ -140,7 +140,7 @@ switch (type) {
 ```
 当类型为BINDER_TYPE_BINDER时，这是一个Binder实体对象，此时会使用```binder_get_node```在发送进程的Binder对象节点nodes中查找节点，使用```binder_get_ref_for_node```在目标进程中查找引用节点，若无则创建新节点。修改type为handle类型，将节点引用表中的序号赋给handle。
 
-```
+``` c++
 case BINDER_TYPE_HANDLE:
 case BINDER_TYPE_WEAK_HANDLE: {
     struct binder_ref *ref = binder_get_ref(proc, fp->handle);
@@ -153,7 +153,7 @@ case BINDER_TYPE_WEAK_HANDLE: {
 ```
 
 当类型为BINDER_TYPE_HANDLE时，这是一个Binder引用对象，首先```binder_get_ref(proc, fp->handle)```根据handle在发送进程的节点引用表中查找引用节点。当目标进程就是Binder实体对象所在进程时，修改type并设置字段，其中cookie存放了BBinder指针。如果不是Binder对象所在进程，则在目标进程中新建一个节点对象的引binder_ref，type不会改动。这个binder_ref数据结构如下：
-```
+``` c++
 struct binder_ref {
     struct rb_node rb_node_desc;
     struct rb_node rb_node_node;
@@ -174,7 +174,7 @@ struct binder_ref {
 Binder机制中CS两端通信的数据单元是Parcel，Binder对象写入Parcel中时需要使用```writeStrongBinder```函数，读取Binder对象则使用```readStrongBinder```,当然这个过程中Binder对象仍然要用flat_binder_object结构体表示。
 
 当某个Server/Service要向ServiceManager注册时，发送本地的Binder实体对象，写入Parcel中的Binder如下：
-```
+``` c++
 obj.type = BINDER_TYPE_BINDER;
 obj.binder = reinterpret_cast<uintptr_t>(local->getWeakRefs());
 obj.cookie = reinterpret_cast<uintptr_t>(local);
@@ -197,9 +197,9 @@ obj->handle = handle;
 Client和Service之间的通信，依赖Driver驱动，同时也要依赖ServiceManager在这个通信过程中起到名字查询作用。ServiceManager是一个守护进程，为各类Binder Service提供**名字查询功能，以及返回Binder Service的引用**。ServiceManager同样依赖Binder机制提供服务，其引用句柄handle=0。SM提供给外部的服务主要是注册服务addService(sp<IBinder>)，查询和返回服务getService(String* name)等，其接口为IServiceManager.h。
 
 ServiceManager的主函数没有依赖libbinder框架，而是自建了一个简单的类似原理的bind.c和主函数:
->frameworks\native\cmds\servicemanager\service_manager.c)*,
+>frameworks\native\cmds\servicemanager\service_manager.c),
 
-```
+``` c++
 int main(int argc, char **argv)
 {
     bs = binder_open(128*1024);
@@ -221,7 +221,7 @@ int main(int argc, char **argv)
 主要步骤是，对/dev/binder设备进行初始化后，将本进程**设置为Binder管理进程，检查权限，最后进入消息循环**```binder_loop(bs, svcmgr_handler)```中轮询Driver中的数据，使用消息处理函数svcmgr_handler处理请求。
 
 ServiceManager维护了一个服务列表svc_list，列表内是svcinfo结构体。注册服务时则将新的Service加入列表，查询/获取服务则将搜索列表返回相应服务的handle：
-```
+``` c++
 obj->flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS;
 obj->type = BINDER_TYPE_HANDLE;
 obj->handle = handle;
@@ -238,7 +238,7 @@ obj->cookie = 0;
 这一段各种资料讲的比较多，常常以MediaPlayerService的注册过程入手分析，在注册过程中，MPS是一个Client，向ServiceManager这个Server注册自己。当注册完毕后，MPS充当一个服务的角色，轮询驱动中的消息。
 > frameworks\av\media\mediaserver\main_mediaserver.cpp
 
-```
+``` c++
 int main(int argc __unused, char** argv)
 {
     sp<ProcessState> proc(ProcessState::self());    
@@ -257,7 +257,7 @@ int main(int argc __unused, char** argv)
 
 这个函数经过IIntergace.h的宏展开后，进入了ISM.asInterface()函数：
 
-```
+``` c++
  android::sp<IServiceManager> IServiceManager::asInterface(const android::sp<android::IBinder>& obj)
 {
     android::sp<IServiceManager> intr;
@@ -274,7 +274,7 @@ int main(int argc __unused, char** argv)
 注意到判断函数queryLocalInterface(),这是IBinder接口中的函数，默认返回null。BpBinder类并没有重写这个函数，intr=null，asInterface返回new BpServiceManager(BpBinder),这样就获取了ServiceManager的代理对象。也就是说，**Client拿到Binder引用对象后，就得到了Binder代理对象**，
 
 而如果是Binder实体对象，继承自BnInterface，而BnInterface重写了这个函数，判断对象的描述字符串descriptor是否和本类相同，如果符合就返回这个指针。
-```
+``` c++
 template<typename INTERFACE>
 inline sp<IInterface> BnInterface<INTERFACE>::queryLocalInterface(
         const String16& _descriptor)
@@ -310,7 +310,7 @@ binder_thread_write()调用结束后，将继续binder_thread_read()处理当前
 
 下面离开内核，回到应用层。在waitForResponse()这个循环中，除了talkWithDriver()，还调用了IPC.executeCommand(cmd)过程，用于响应驱动传来的指令，处理来自Driver的数据了。**对于Service来说，业务逻辑就在这里执行。**
 
-```
+``` c++
 status_t IPCThreadState::executeCommand(int32_t cmd)
 {
     switch (cmd) {
@@ -335,12 +335,12 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
 
 ## 6 Binder机制中的多线程
 还有两行代码没有分析，下面来看看。
-```
+``` c++
 ProcessState::self()->startThreadPool();
 IPCThreadState::self()->joinThreadPool();
 ```
 第一行看起来是启动了线程池，看看startThreadPool函数怎么实现的：
-```
+``` c++
 void ProcessState::startThreadPool()
 {
     AutoMutex _l(mLock);
@@ -351,7 +351,7 @@ void ProcessState::startThreadPool()
 }
 ```
 对mThreadPoolStarted的判断，表明这个startThreadPool只能启动一次，线程池启动后，这个值为true。接下来看看spawnPooledThread()。
-```
+``` c++
 void ProcessState::spawnPooledThread(bool isMain)
 {
     if (mThreadPoolStarted) {
@@ -364,7 +364,7 @@ void ProcessState::spawnPooledThread(bool isMain)
 ```
 函数中创建了一个PoolThread类，PoolThread.run()则创建了新线程。isMain变量表示这个线程是否是线程池中的第一个。上面提到在Binder事务中还要执行```IPCThreadState::executeCommand(cmd)``响应驱动传来的消息，当驱动传来BR_SPAWN_LOOPER时，就要执行spawnPooledThread(false),这就是驱动传过来的消息，要创建新线程了。
 
-```
+``` c++
 case BR_SPAWN_LOOPER:
         mProcess->spawnPooledThread(false);
         break;
@@ -373,7 +373,7 @@ PoolThread类的执行体是IPC.threadLoop()函数，函数里是```IPCThreadSta
 
 该看看线程执行体了：
 
-```
+``` c++
 void IPCThreadState::joinThreadPool(bool isMain)
 {
     mOut.writeInt32(isMain ? BC_ENTER_LOOPER : BC_REGISTER_LOOPER);
