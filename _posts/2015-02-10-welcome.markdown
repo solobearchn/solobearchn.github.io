@@ -1,0 +1,11 @@
+---
+layout: post
+title:  "欢迎来到我的博客"
+date:   2016-10-17 06:00:00
+categories: Blogs
+---
+使用了[Gaohaoyang](https://github.com/Gaohaoyang)的模板。说来也巧，高浩阳是我同一级的校友，当年玩儿民谣在人人网上很出名。
+
+[jekyll]:      http://jekyllrb.com
+[jekyll-gh]:   https://github.com/jekyll/jekyll
+[jekyll-help]: https://github.com/jekyll/jekyll-help
