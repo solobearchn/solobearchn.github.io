@@ -11,7 +11,7 @@ icon: heart
 ### About
 
 ~~西北某著名985院校~~
-传统工科硕士毕业。小作坊里打工一年，生无可恋；头脑发热裸辞待业，欲投身互联网大潮，遭遇寒冬。温饱存疑，前途未卜。
+传统工科硕士毕业。制造业小作坊里打工一年，生无可恋；头脑发热裸辞，欲投身互联网大潮，遭遇寒冬。待业月余，温饱存疑，前途未卜。
 
 ---
 
@@ -27,7 +27,3 @@ icon: heart
 
 * [gaohaoyang的Jeklly模板](https://github.com/Gaohaoyang/gaohaoyang.github.io)
 * [Jekyll](https://github.com/jekyll/jekyll)
-
-## Comments
-
-{% include comments.html %}

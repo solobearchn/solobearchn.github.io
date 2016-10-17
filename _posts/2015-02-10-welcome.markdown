@@ -3,6 +3,7 @@ layout: post
 title:  "第一篇博客"
 date:   2016-10-17 06:00:00
 categories: Blogs
+tags: murmurs
 ---
 
 * content
@@ -15,7 +16,3 @@ categories: Blogs
 ## More
 
 写博客中感觉最蛋疼的，还是MarkDown，因为没有统一的标准。我喜欢用有道云笔记，但是转到GitHub上代码缩进就一团糟，而且Github貌似还不支持流程图？关于所见即所得的编辑器，我还用过CmdMarkDown、CSDN、简书，但每家都不太一样，头大。现在只好用Sublime写然后预览了。
-
-## Comments
-
-{% include comments.html %}
