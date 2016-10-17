@@ -1,11 +1,21 @@
 ---
 layout: post
-title:  "欢迎来到我的博客"
+title:  "第一篇博客"
 date:   2016-10-17 06:00:00
 categories: Blogs
 ---
-使用了[Gaohaoyang](https://github.com/Gaohaoyang)的模板。说来也巧，高浩阳是我同一级的校友，当年玩儿民谣在人人网上很出名。
 
-[jekyll]:      http://jekyllrb.com
-[jekyll-gh]:   https://github.com/jekyll/jekyll
-[jekyll-help]: https://github.com/jekyll/jekyll-help
+* content
+{:toc}
+
+## 博客模板
+
+使用了[Gaohaoyang](https://github.com/Gaohaoyang)的Jekyll模板。说来也巧，高浩阳是我同一级的校友，当年在人人网上很出名，玩儿校园民谣的。
+
+## More
+
+写博客中感觉最蛋疼的，还是MarkDown，因为没有统一的标准。我喜欢用有道云笔记，但是转到GitHub上代码缩进就一团糟，而且Github貌似还不支持流程图？关于所见即所得的编辑器，我还用过CmdMarkDown、CSDN、简书，但每家都不太一样，头大。现在只好用Sublime写然后预览了。
+
+## Comments
+
+{% include comments.html %}

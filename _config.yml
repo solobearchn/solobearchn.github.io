@@ -1,30 +1,59 @@
-# Site settings
-title: solobearchn.github.ig
-brief-intro: solobearchn's notes as Blogs
-email: zhangxiongchn@foxmail.com
-description: 述而不作，狗熊搬砖
-# > # this means to ignore newlines until "baseurl:"
-#   Write an awesome description for your new site here. You can edit this
-#   line in _config.yml. It will appear in your document head meta (for
-#   Google search results) and in your feed.xml site description.
+# Welcome to Jekyll!
+#
+# This config file is meant for settings that affect your whole blog, values
+# which you are expected to set up once and rarely need to edit after that.
+# For technical reasons, this file is *NOT* reloaded automatically when you use
+# 'jekyll serve'. If you change this file, please restart the server process.
 
-# baseurl: "" # the subpath of your site, e.g. /blog/
-# url: "http://yourdomain.com" # the base hostname & protocol for your site
-# twitter_username: jekyllrb
-github_username:  solobearchn
+# Site settings
+title: Solobear
+brief-intro: 述而不作
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "https://solobearchn.github.io/" # the base hostname & protocol for your site
+
 permalink: /:year/:month/:day/:title/
 
-# Build settings
-markdown: kramdown
+# other links
+twitter_username: 
+facebook_username: 
+github_username:  solobearchn
+email: zhangxiongchn@foxmail.com
+weibo_username: zhangxiongchn
+zhihu_username: 张雄
+dribbble_username:
 
-# highlight
-# 本地用rouge, github上用pygments
-highlighter: pygments
-# highlighter: rouge
-# highlighter: false
+description_footer: 述而不作，我只是搬运工
 
 # comments
 # two ways to comment, only choose one, and use your own short name
 # 两种评论插件，选一个就好了，使用自己的 short_name
-# duoshuo_shortname: #xxx
-disqus_shortname: xxx
+duoshuo_shortname: #hygblog
+disqus_shortname: solobearchn
+
+# statistic analysis 统计代码
+# 百度统计 id，将统计代码替换为自己的百度统计id，即
+# hm.src = "//hm.baidu.com/hm.js?xxxxxxxxxxxx";
+# xxxxx字符串
+# baidu_tongji_id: cf8506e0ef223e57ff6239944e5d46a4
+# google_analytics_id: UA-72449510-4 # google 分析追踪id
+
+# Build settings
+markdown: kramdown
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# port
+# port: 1234
+
+# url
+category_dir: category/
+tag_dir: tag/
+
+# excerpt
+excerpt_separator: "\n\n\n\n"
+
+# paginate
+gems: [jekyll-paginate]
+paginate: 6
