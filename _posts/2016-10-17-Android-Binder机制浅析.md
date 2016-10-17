@@ -9,6 +9,7 @@ tags: IPC Binder Service 多线程
 * content
 {:toc}
 
+笔记：简单、直观、透彻地理解Android Binder进程间通信的基本原理和基本流程：数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的。
 
 ## Binder机制：驱动与数据传输
 
