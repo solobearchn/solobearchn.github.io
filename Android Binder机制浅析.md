@@ -1,8 +1,5 @@
-* content
-{:toc}
 
-
-## Binder机制：驱动与数据传输
+## 1 Binder机制：驱动与数据传输
 
 Android中的Binder机制涉及Java应用层、Native应用层（libbinder、C++）和Linux内核层（binder driver，C），其中Java层是对C++ Native层的包装，而应用层进程之间的通信则最终通过内核中的驱动Binder dirver完成。这种跨进程调用，进程之间的数据必须放在内核空间然后等待。
 
@@ -53,7 +50,7 @@ struct binder_transaction_data {
 ---
 
 
-## Binder/Service：libbinder中的接口与对象
+## 2 Binder/Service：libbinder中的接口与对象
 
 ![image](http://gityuan.com/images/binder/addService/add_media_player_service.png)
 *来源：Gityuan* [Binder系列5—注册服务(addService)](http://gityuan.com/2015/11/14/binder-add-service/)
@@ -116,7 +113,7 @@ Client获得代理类BpExample，其引用对象remote=BpBinder(handle)。引用
 
 ---
 
-## Binder对象在驱动中的转换
+## 3 Binder对象在驱动中的转换
 
 Binder对象在传输中是跨进程的，其生命周期的管理是一个重点。服务的实体BBinder死亡后，Client进程中的引用对象也应当删除。Client进程中的ProcessState管理本进程中的所有Binder引用类的创建和释放，而引用对象和实体对象之间的关联则由驱动负责管理。Driver驱动维护了一颗红黑树，每个进程中的binder_proc结构体都插入树中，每个进程中的binder_proc都保存了Binder对象的node节点表和node_ref引用表。Binder对象的插入和查询就是在这棵树中执行的，
 
@@ -217,7 +214,7 @@ obj->handle = handle;
 ---
 
 
-## ServiceManager做了什么
+## 4 ServiceManager做了什么
 
 Client和Service之间的通信，依赖Driver驱动，同时也要依赖ServiceManager在这个通信过程中起到名字查询作用。ServiceManager是一个守护进程，为各类Binder Service提供
 **名字查询功能，以及返回Binder Service的引用**。ServiceManager同样依赖Binder机制提供服务，其引用句柄handle=0。SM提供给外部的服务主要是注册服务```addService(sp<IBinder>)```，查询和返回服务```getService(String* name)```等，其接口函数定义在IServiceManager.h中。
@@ -263,7 +260,7 @@ obj->cookie = 0;
 
 ---
 
-## 服务的注册过程
+## 5 服务的注册过程
 
 这一段各种资料讲的比较多，常常以MediaPlayerService的注册过程入手分析，在注册过程中，MPS是一个Client，向ServiceManager这个Server注册自己。当注册完毕后，MPS充当一个服务的角色，轮询驱动中的消息。
 > frameworks\av\media\mediaserver\main_mediaserver.cpp
@@ -369,7 +366,7 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
 
 ---
 
-## Binder机制中的多线程
+## 6 Binder机制中的多线程
 
 还有两行代码没有分析，下面来看看。
 
@@ -445,17 +442,17 @@ void IPCThreadState::joinThreadPool(bool isMain)
 **驱动记录了每次Binder调用时的线程ID，唤醒对应的线程读取缓冲区数据**。在Binder机制中，**由内核驱动来处理应用层线程的创建和唤醒**，这和一般的IO模型不同。
 
 ---
-##  总结
+##  7 总结
 
 以上内容主要是便于**简单、粗暴、直观地**理解进程间通信的基本原理和基本流程，一般资料中翔实的过程代码细节就不涉及了。
 
 对于进程间通信，最想了解的不外乎最直观的两点：**数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的**，这两点背后的机制在于Binder驱动层的**mmap共享内存、红黑树节点和引用的维护**。理解了以上两点后，剩下的不过是梳理应用层libbinder构建的与底层驱动通信的模型，这其中涉及类与接口的设计、Binder调用事务过程以及多线程。
 
-[本文链接:](https://solobearchn.github.io/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/)，转载时请注明出处。
+本文链接:https://solobearchn.github.io/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/，我的Github:solobearchn.github.io
 
 ---
 
-## References
+## 8 References
 这是一篇笔记，参考了：
 
 [刘超 深入解析Android 5.0系统](https://book.douban.com/subject/26377840/)
