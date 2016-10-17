@@ -17,9 +17,9 @@ icon: heart
 
 ### Contacts
 
-* email：zhangxiongchn@foxmail.com
+* Email：zhangxiongchn@foxmail.com
 * [知乎](https://www.zhihu.com/people/bearing-bear)
-* [新浪微博]：(http://weibo.com/zhangxiongchn/)
+* [新浪微博](http://weibo.com/zhangxiongchn/)
 
 ---
 
