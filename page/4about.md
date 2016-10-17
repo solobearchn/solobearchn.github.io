@@ -27,3 +27,9 @@ icon: heart
 
 * [gaohaoyang的Jeklly模板](https://github.com/Gaohaoyang/gaohaoyang.github.io)
 * [Jekyll](https://github.com/jekyll/jekyll)
+
+---
+
+## Comments
+
+{% include comments.html %}

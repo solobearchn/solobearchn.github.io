@@ -1,11 +1,3 @@
----
-layout: post
-title:  "Android Binder机制浅析"
-date:   2016-10-17 08:00:00
-categories: Android
-tags: IPC Binder Service 多线程
----
-
 * content
 {:toc}
 
@@ -458,6 +450,8 @@ void IPCThreadState::joinThreadPool(bool isMain)
 以上内容主要是便于**简单、粗暴、直观地**理解进程间通信的基本原理和基本流程，一般资料中翔实的过程代码细节就不涉及了。
 
 对于进程间通信，最想了解的不外乎最直观的两点：**数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的**，这两点背后的机制在于Binder驱动层的**mmap共享内存、红黑树节点和引用的维护**。理解了以上两点后，剩下的不过是梳理应用层libbinder构建的与底层驱动通信的模型，这其中涉及类与接口的设计、Binder调用事务过程以及多线程。
+
+[本文链接:](https://solobearchn.github.io/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/)，转载时请注明出处。
 
 ---
 
