@@ -23,5 +23,5 @@ tags: murmurs
 System.out.println("md");
 ```
 
-以及这样的呢```findViewById(R.id.textView)``` ，效果呢？
+以及这样的呢```findViewById(R.id.textView)``` ，看看效果？
 
