@@ -20,6 +20,9 @@ Android中的Binder机制涉及Java应用层、Native应用层（libbinder、C++
 Binder机制作为Android的进程间通信方式(IPC)，采用mmap共享内存方式，应用层直接从与kernel共享的缓冲区读取，只产生一次读写提高了数据传输效率。其实质是在Client-Server之间利用虚拟的字符设备/dev/binder作为CS两端的数据传输中介。应用层（Client、Server）的通信是
 **通过与driver的IO**实现的：Client与Driver设备IO，Server则轮询Driver中的数据，并将结果反馈至Driver，Client再从Driver中读取结果。当然这里的Server通信依赖Binder机制，是一个Binder类型的Service。
 
+
+
+
 应用层与内核中的driver之间的IO操作使用统一的接口函数```ioctl(fd,CMD,&bwr)```，通过switch(CMD)进行相应的IO操作，所传输的数据则存放在binder_read_write结构体中。
 
 ``` c++
