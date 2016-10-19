@@ -5,9 +5,656 @@
     <description></description>
     <link>http://localhost:4000/</link>
     <atom:link href="http://localhost:4000/feed.xml" rel="self" type="application/rss+xml"/>
-    <pubDate>Mon, 17 Oct 2016 09:09:02 +0800</pubDate>
-    <lastBuildDate>Mon, 17 Oct 2016 09:09:02 +0800</lastBuildDate>
+    <pubDate>Wed, 19 Oct 2016 08:17:57 +0800</pubDate>
+    <lastBuildDate>Wed, 19 Oct 2016 08:17:57 +0800</lastBuildDate>
     <generator>Jekyll v3.3.0</generator>
+    
+      <item>
+        <title>Android Binder机制浅析</title>
+        <description>&lt;ul id=&quot;markdown-toc&quot;&gt;
+  &lt;li&gt;&lt;a href=&quot;#binder&quot; id=&quot;markdown-toc-binder&quot;&gt;Binder机制：驱动与数据传输&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#binderservicelibbinder&quot; id=&quot;markdown-toc-binderservicelibbinder&quot;&gt;Binder/Service：libbinder中的接口与对象&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#binder-1&quot; id=&quot;markdown-toc-binder-1&quot;&gt;Binder对象在驱动中的转换&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#servicemanager&quot; id=&quot;markdown-toc-servicemanager&quot;&gt;ServiceManager做了什么&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#section&quot; id=&quot;markdown-toc-section&quot;&gt;服务的注册过程&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#binder-2&quot; id=&quot;markdown-toc-binder-2&quot;&gt;Binder机制中的多线程&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#section-1&quot; id=&quot;markdown-toc-section-1&quot;&gt;总结&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#references&quot; id=&quot;markdown-toc-references&quot;&gt;References&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;笔记：简单、直观、透彻地理解Android Binder进程间通信的基本原理和基本流程：数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的。&lt;/p&gt;
+
+&lt;h2 id=&quot;binder&quot;&gt;Binder机制：驱动与数据传输&lt;/h2&gt;
+
+&lt;p&gt;Android中的Binder机制涉及Java应用层、Native应用层（libbinder、C++）和Linux内核层（binder driver，C），其中Java层是对C++ Native层的包装，而应用层进程之间的通信则最终通过内核中的驱动Binder dirver完成。这种跨进程调用，进程之间的数据必须放在内核空间然后等待。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://img.my.csdn.net/uploads/201610/14/1476404610_9170.png&quot; alt=&quot;image&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Binder机制作为Android的进程间通信方式(IPC)，采用mmap共享内存方式，应用层直接从与kernel共享的缓冲区读取，只产生一次读写提高了数据传输效率。其实质是在Client-Server之间利用虚拟的字符设备/dev/binder作为CS两端的数据传输中介。应用层（Client、Server）的通信是
+&lt;strong&gt;通过与driver的IO&lt;/strong&gt;实现的：Client与Driver设备IO，Server则轮询Driver中的数据，并将结果反馈至Driver，Client再从Driver中读取结果。当然这里的Server通信依赖Binder机制，是一个Binder类型的Service。&lt;/p&gt;
+
+&lt;p&gt;应用层与内核中的driver之间的IO操作使用统一的接口函数&lt;code class=&quot;highlighter-rouge&quot;&gt;ioctl(fd,CMD,&amp;amp;bwr)&lt;/code&gt;，通过switch(CMD)进行相应的IO操作，所传输的数据则存放在binder_read_write结构体中。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_write_read&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;write_size&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;write_consumed&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;write_buffer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;read_size&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;read_consumed&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;read_buffer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;存放在bwr的buffer中的数据也有格式，即消息ID+binder_transaction_data&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_transaction_data&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;k&quot;&gt;union&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u32&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;target&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u32&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;code&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u32&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;pid_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;sender_pid&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;uid_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;sender_euid&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;data_size&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;offsets_size&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;k&quot;&gt;union&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;buffer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;offsets&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u8&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;buf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;8&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;data&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;上面的binder_transact_data中包括了从应用层传输过来的Parcel类的数据data，以及Binder对象数据。驱动层只负责操作转换Binder相关的数据，对应用层Parcel中的普通数据并不关心。当然如果Parcel中打包了Binder对象，驱动也会进行处理。Binder对象在跨进程传输时，驱动会对其进行转换。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;binderservicelibbinder&quot;&gt;Binder/Service：libbinder中的接口与对象&lt;/h2&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://gityuan.com/images/binder/addService/add_media_player_service.png&quot; alt=&quot;image&quot; /&gt;
+&lt;em&gt;来源：Gityuan&lt;/em&gt; &lt;a href=&quot;http://gityuan.com/2015/11/14/binder-add-service/&quot;&gt;Binder系列5—注册服务(addService)&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;IBinder与Service业务接口INTERFACE之间的关系如上图所示，图中没有指出的是BpMediaPlayerService类对BpBinder的聚合关系。&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Binder实体对象：BBinder，Binder服务的提供者，Binder机制中提供服务的Service必须继承自BBinder类；&lt;/li&gt;
+  &lt;li&gt;Binder引用对象：BpBinder(handle)，存在于Client端，handle指向服务端。&lt;/li&gt;
+  &lt;li&gt;Binder代理对象：BpINTERFACE(BpBinder(handle)):实现了Service服务中的业务接口INTERFACE的接口对象，通过代理对象，Client能够像使用本地对象一样使用远端的实体对象提供的服务。&lt;/li&gt;
+  &lt;li&gt;IBinder对象：BBinder+BpBinder的统称。&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;图中以MediaPlayerService为例，其业务代码接口IMediaPlayerService提供给实体对象和代理对象相同的业务函数接口。BBinder实体对象MediaPlayerService继承了BnINTERFACE，并重写了onTransact()成员函数作为实际的业务处理过程。在CS模式中，Client获取了Service/Binder引用对象后，构造了BpMPS(BpBinder(handle))，在使用业务函数时，其参数经由驱动传递至Service进程，服务进程轮询driver中的数据、执行业务逻辑并reply。&lt;/p&gt;
+
+&lt;p&gt;Client当然可以跳过代理对象，直接通过Binder引用对象BpBinder(handle)使用服务，但是代理对象具备了处理业务的接口，依靠native层的
+&lt;strong&gt;libbinder框架带来业务逻辑接口的统一&lt;/strong&gt;，Client就像使用本地接口一样使用远程的服务接口。&lt;/p&gt;
+
+&lt;p&gt;下面可以简单探讨一下Binder机制下服务类的写法。以ExmapleService为例，其业务逻辑接口由IExampleService定义，业务接口为&lt;code class=&quot;highlighter-rouge&quot;&gt;virtual int getData();&lt;/code&gt;。建立的ExampleService类则实现了业务接口&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;ExampleService&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BnExampleService&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;public&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;getData&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(){&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mData&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;}&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;mData&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0x123456&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;相应的，BnExmapleService中的onTransact()：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;BnExampleService&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;onTransact&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;code&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Parcel&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;data&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Parcel&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;reply&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;switch&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;code&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;GET_DATA&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;reply&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;writeInt&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;this&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;getData&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;());&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;......&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;代理类BpExmaple应当这样实现&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;BpExampleService&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BpInterface&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IExampleService&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;public&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;virtual&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;getData&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;remote&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;transact&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;GET_DATA&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;data&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;reply&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;reply&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;readInt&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;Client获得代理类BpExample，其引用对象remote=BpBinder(handle)。引用对象的transact()实际上交由IPCThreadState执行，其请求码（函数号）为GET_DATA。Service端收到请求码后，调用&lt;code class=&quot;highlighter-rouge&quot;&gt;BBinder::transact()&lt;/code&gt;，继而调用&lt;code class=&quot;highlighter-rouge&quot;&gt;ExampleServic::onTransact()&lt;/code&gt;返回。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;binder-1&quot;&gt;Binder对象在驱动中的转换&lt;/h2&gt;
+
+&lt;p&gt;Binder对象在传输中是跨进程的，其生命周期的管理是一个重点。服务的实体BBinder死亡后，Client进程中的引用对象也应当删除。Client进程中的ProcessState管理本进程中的所有Binder引用类的创建和释放，而引用对象和实体对象之间的关联则由驱动负责管理。Driver驱动维护了一颗红黑树，每个进程中的binder_proc结构体都插入树中，每个进程中的binder_proc都保存了Binder对象的node节点表和node_ref引用表。Binder对象的插入和查询就是在这棵树中执行的，&lt;/p&gt;
+
+&lt;p&gt;在传输过程中，Binder实体对象和引用对象均使用
+&lt;strong&gt;flat_binder_object结构体来表示Binder对象&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;flat_binder_object&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u32&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;type&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u32&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;k&quot;&gt;union&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;__u32&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+ &lt;span class=&quot;n&quot;&gt;binder_uintptr_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;以上type常用BINDER_TYPE_BINDER/BINDER_TYPE_HANDLE标识，flag表示传输方式，union则存储了binder的本地指针或者远程引用对象的句柄handle，cookie只在打包BBinder中使用，存放了BBinder的指针。&lt;/p&gt;
+
+&lt;p&gt;Driver中的一个重要工作就是处理传递中的Binder对象，driver会将flat_binder_object结构体拆开并做相应操作。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;switch&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;type&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_BINDER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_WEAK_BINDER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;......&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_node&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;node&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_get_node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binder&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;......&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;binder_get_ref_for_node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;target_proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;type&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_BINDER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;type&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_HANDLE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;......&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ref&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;desc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;当类型为BINDER_TYPE_BINDER时，这是一个Binder实体对象，此时会使用binder_get_node在发送进程的Binder对象节点nodes中查找节点，使用&lt;code class=&quot;highlighter-rouge&quot;&gt;binder_get_ref_for_node&lt;/code&gt;在目标进程中查找引用节点，若无则创建新节点。修改type为handle类型，将节点引用表中的序号赋给handle。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_HANDLE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE__HANDLE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_ref&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ref&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_get_ref&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ref&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;node&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;proc&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;target_proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;type&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_BINDER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binder&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ref&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;node&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ref&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;node&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;else&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_ref&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;new_ref&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binder_get_ref_for_node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;target_proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ref&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;当类型为BINDER_TYPE_HANDLE时，这是一个Binder引用对象，首先&lt;code class=&quot;highlighter-rouge&quot;&gt;binder_get_ref(proc, fp-&amp;gt;handle)&lt;/code&gt;根据handle在发送进程的节点引用表中查找引用节点。当目标进程就是Binder实体对象所在进程时，修改type并设置字段，其中cookie存放了BBinder指针。如果不是Binder对象所在进程，则在目标进程中新建一个节点对象的引binder_ref，type不会改动。这个binder_ref数据结构如下：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_ref&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;rb_node&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;rb_node_desc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;rb_node&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;rb_node_node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;hlist_node&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;node_entry&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_proc&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_node&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;node&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;uint32_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;desc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;strong&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;weak&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_ref_death&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;death&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;其中，数值&lt;strong&gt;uint32_desc&lt;/strong&gt;就是引用项在红黑树中的序号，即BpBinder中的mHandle。&lt;/p&gt;
+
+&lt;p&gt;根据上面的过程，可以简要分析常用场景中Binder对象在整个传输过程中做了怎样的转换：&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://img.my.csdn.net/uploads/201610/14/1476408704_3527.png&quot; alt=&quot;image&quot; /&gt;
+Binder机制中CS两端通信的数据单元是Parcel，Binder对象写入Parcel中时需要使用&lt;code class=&quot;highlighter-rouge&quot;&gt;writeStrongBinder&lt;/code&gt;函数，读取Binder对象则使用&lt;code class=&quot;highlighter-rouge&quot;&gt;readStrongBinder&lt;/code&gt;,当然这个过程中Binder对象仍然要用flat_binder_object结构体表示。&lt;/p&gt;
+
+&lt;p&gt;当某个Server/Service要向ServiceManager注册时，发送本地的Binder实体对象，写入Parcel中的Binder如下：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;type&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_BINDER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binder&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;reinterpret_cast&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;uintptr_t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;local&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;getWeakRefs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;());&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;reinterpret_cast&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;uintptr_t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;local&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;此Binder对象数据经驱动转换后type=BINDER_TYPE_HANDLE，可以注册进ServiceManager了。而当某个第三方Client想要获取这个Service时，ServiceManager发送给驱动的Binder对象如下&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;obj-&amp;gt;type = BINDER_TYPE_HANDLE;
+obj-&amp;gt;handle = handle;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;第三方Client进程中并没有这个Binder实体，因此Client进程中新建了一个节点引用这个Binder，拿到了mHandle，后续利用&lt;code class=&quot;highlighter-rouge&quot;&gt;readStrongBinder&lt;/code&gt;构造了代理对象。&lt;/p&gt;
+
+&lt;p&gt;而当这个第三方Client手握handle句柄值，想调用Service所在进程的业务逻辑时，向驱动发送的Binder对象其type=BINDER_TYPE_HANDLE。驱动根据根据handle找到了目标进程，发现Client所引用的Binder对象就在目标进程里，于是改动这个结构体内的type,target和cookie。文章后面会提到，
+&lt;strong&gt;正是由于这种转换，Service拿到转换后的Binder对象，会执行相应的业务逻辑并返回结果&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;p&gt;总而言之，CS模型中的Binder对象经由驱动往来穿梭，驱动通过对flat_binder_object结构的操作,实现了Binder对象的不同状态的转变。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;servicemanager&quot;&gt;ServiceManager做了什么&lt;/h2&gt;
+
+&lt;p&gt;Client和Service之间的通信，依赖Driver驱动，同时也要依赖ServiceManager在这个通信过程中起到名字查询作用。ServiceManager是一个守护进程，为各类Binder Service提供
+&lt;strong&gt;名字查询功能，以及返回Binder Service的引用&lt;/strong&gt;。ServiceManager同样依赖Binder机制提供服务，其引用句柄handle=0。SM提供给外部的服务主要是注册服务&lt;code class=&quot;highlighter-rouge&quot;&gt;addService(sp&amp;lt;IBinder&amp;gt;)&lt;/code&gt;，查询和返回服务&lt;code class=&quot;highlighter-rouge&quot;&gt;getService(String* name)&lt;/code&gt;等，其接口函数定义在IServiceManager.h中。&lt;/p&gt;
+
+&lt;p&gt;ServiceManager的主函数没有依赖libbinder框架，而是自建了一个简单的类似原理的bind.c和主函数:&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;frameworks\native\cmds\servicemanager\service_manager.c,&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;argc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;**&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;argv&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;bs&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;binder_open&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;128&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1024&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binder_become_context_manager&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;bs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;ALOGE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;cannot become context manager (%s)&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;strerror&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;errno&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;));&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;selinux_enabled&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;is_selinux_enabled&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;sehandle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;selinux_android_service_context_handle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;svcmgr_handle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_SERVICE_MANAGER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;binder_loop&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;bs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;svcmgr_handler&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;主要步骤是，对/dev/binder设备进行初始化后，将本进程设置为Binder管理进程，检查权限，最后进入消息循环
+binder_loop(bs, svcmgr_handler)
+中轮询Driver中的数据，使用消息处理函数svcmgr_handler处理请求。&lt;/p&gt;
+
+&lt;p&gt;ServiceManager维护了一个服务列表svc_list，列表内是svcinfo结构体。注册服务时则将新的Service加入列表，查询/获取服务则将搜索列表返回相应服务的handle：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x7f&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;FLAT_BINDER_FLAG_ACCEPTS_FDS&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;type&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BINDER_TYPE_HANDLE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;上面的Binder对象obj，是一个flat_binder_object结构体，ServiceManager将obj传输至驱动。&lt;/p&gt;
+
+&lt;p&gt;需要指出的是，Binder服务的句柄handle是一个u_int32数值，只对发起请求的Client端进程和驱动有意义，不同进程中指代相同Binder实体的句柄在数值上可能是不同的，ServiceManager记录了所有系统service对应的handle，当用户进程需要获取某个系统service的代理时，SMS就会在内部按service名查找到合适的句柄值handle，并“逻辑上”传递给用户进程，于是用户进程会得到一个新的合法句柄值，这个新句柄值可能在数值上和SMS所记录的句柄值不同，然而，它们指代的却是同一个Service实体，句柄的合法性是由Binder驱动保证的。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;section&quot;&gt;服务的注册过程&lt;/h2&gt;
+
+&lt;p&gt;这一段各种资料讲的比较多，常常以MediaPlayerService的注册过程入手分析，在注册过程中，MPS是一个Client，向ServiceManager这个Server注册自己。当注册完毕后，MPS充当一个服务的角色，轮询驱动中的消息。&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;frameworks\av\media\mediaserver\main_mediaserver.cpp&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;argc&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;__unused&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;**&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;argv&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ProcessState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;proc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ProcessState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;());&lt;/span&gt;    
+    &lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IServiceManager&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;sm&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;defaultServiceManager&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;      
+    &lt;span class=&quot;n&quot;&gt;MediaPlayerService&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;instantiate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;     
+    &lt;span class=&quot;n&quot;&gt;ProcessState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;startThreadPool&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;    
+    &lt;span class=&quot;n&quot;&gt;IPCThreadState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;joinThreadPool&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;proc(ProcessState::self())
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;每个Client进程都要对本进程中Binder引用对象进行生命周期管理，这里打开了/dev/binder驱动,mmap了1MB空间用于binder事务。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;defaultServiceManager():获取ServiceManager，准确的说是获取ServiceManager的代理
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;这个函数经过IIntergace.h的宏展开后，进入了ISM.asInterface()函数：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; &lt;span class=&quot;n&quot;&gt;android&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IServiceManager&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IServiceManager&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;asInterface&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;android&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;android&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IBinder&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;android&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IServiceManager&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;intr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;!=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;intr&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;static_cast&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IServiceManager&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&amp;gt;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;queryLocalInterface&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IServiceManager&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;descriptor&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;get&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;());&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;intr&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;intr&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BpServiceManager&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;obj&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;intr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;注意到判断函数queryLocalInterface(),这是IBinder接口中的函数，默认返回null。BpBinder类并没有重写这个函数，intr=null，asInterface返回new BpServiceManager(BpBinder),这样就获取了ServiceManager的代理对象。也就是说，
+&lt;strong&gt;Client拿到Binder引用对象后，就得到了Binder代理对象&lt;/strong&gt;，&lt;/p&gt;
+
+&lt;p&gt;而如果是Binder实体对象，继承自BnInterface，而BnInterface重写了这个函数，判断对象的描述字符串descriptor是否和本类相同，如果符合就返回这个指针。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;template&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;INTERFACE&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;kr&quot;&gt;inline&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IInterface&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BnInterface&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;INTERFACE&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;queryLocalInterface&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;String16&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_descriptor&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;_descriptor&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;INTERFACE&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;descriptor&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;this&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;从CS两端的角度来看这个，Client端获取的必定是引用对象，因此使用BpBinder创建了代理对象。Service端收到实体对象后，如果类描述符合，则可以直接使用本进程中的对象，因此接返回对象指针。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;MediaPlayerService::instantiate()    
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;这一行也就是&lt;code class=&quot;highlighter-rouge&quot;&gt;BpServiceManager(BpBinder(0)).addService(Str name,new MPS)&lt;/code&gt;，接着进入IServiceManager的业务逻辑，利用了指向ServiceManager的引用对象BpBinder(0)。接着进入BpBinder.transact过程，实质上还是将任务交给了IPCThreadState:&lt;code class=&quot;highlighter-rouge&quot;&gt;IPC-&amp;gt;transact(mHandle, code, data, reply,flags)&lt;/code&gt;，对于Client来说，所需数据就通过&lt;strong&gt;reply&lt;/strong&gt;获取。&lt;/p&gt;
+
+&lt;p&gt;每个线程都有一个IPCThreadState，成员变量mProcess保存了ProcessState变量(每个进程只有一个)，mIn用来接收来自Binder设备的数据，mOut用来存储发往Binder设备的数据，默认大小均为256字节。IPCThreadState进行transact事务处理分3部分：
+&lt;strong&gt;errorCheck()数据错误检查，writeTransactionData()写入传输数据，waitForResponse()等待驱动数据响应&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;p&gt;其中，waitForResponse()是一个死循环，利用&lt;code class=&quot;highlighter-rouge&quot;&gt;IPC.talkWithDriver()&lt;/code&gt;与驱动之间通信,&lt;code class=&quot;highlighter-rouge&quot;&gt;IPC.talkWithDriver()&lt;/code&gt;中又调用了&lt;code class=&quot;highlighter-rouge&quot;&gt;ioctl(mProcess-&amp;gt;mDriverFD, BINDER_WRITE_READ, &amp;amp;bwr)&lt;/code&gt;进入与内核，开始于驱动的通信,ioctl调用了内核中的binder.c。&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;kernel\drivers\staging\android\binder.c&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;进入ioctl后，经由&lt;code class=&quot;highlighter-rouge&quot;&gt;binder_thread_write()&lt;/code&gt;中的判断分支进入&lt;code class=&quot;highlighter-rouge&quot;&gt;binder_transaction()&lt;/code&gt;过程。binder_transaction()内容比较多，主要步骤是：&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;找到代表目标进程的节点，handle=0则指向ServiceManager&lt;/li&gt;
+  &lt;li&gt;搜寻目标线程，使用目标线程中的todo队列&lt;/li&gt;
+  &lt;li&gt;对本次Binder调用事务过程创建binder_transaction结构体，设置相应的数据&lt;/li&gt;
+  &lt;li&gt;在目标进程的缓冲区分配空间，并复制用户进程的数据到内核&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;处理传输的Binder对象&lt;/strong&gt;，前面已经分析了这个过程&lt;/li&gt;
+  &lt;li&gt;将本次调用的binder_transaction结构体链接到线程的transaction_stack列表中.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;binder_thread_write()调用结束后，将继续binder_thread_read()处理当前线程和进程中的todo队列。&lt;/p&gt;
+
+&lt;p&gt;下面离开内核，回到应用层。在waitForResponse()这个循环中，除了talkWithDriver()，还调用了&lt;code class=&quot;highlighter-rouge&quot;&gt;IPC.executeCommand(cmd)&lt;/code&gt;过程，用于响应驱动传来的指令，处理来自Driver的数据了。
+&lt;strong&gt;对于Service来说，业务逻辑就在这里执行。&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;status_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IPCThreadState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;executeCommand&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int32_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;cmd&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;switch&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cmd&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BR_TRANSACTION&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;target&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;BBinder&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;BBinder&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cookie&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;error&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;transact&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;code&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;buffer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;reply&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;tr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt; 
+            &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; 
+    &lt;span class=&quot;p&quot;&gt;......&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;    
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;在驱动对Binder对象的转换过程中提到，Client发送的Binder对象进入Service所在的目标进程时，其target、cookier都做了转换。对于经驱动处理后的Binder对象，由于Service进程自身就是Binder实体对象，因此执行了以上的&lt;code class=&quot;highlighter-rouge&quot;&gt;BBinder-&amp;gt;transact()&lt;/code&gt;函数。&lt;code class=&quot;highlighter-rouge&quot;&gt;BBinder::transact()&lt;/code&gt;函数又调用了Binder实体类的&lt;code class=&quot;highlighter-rouge&quot;&gt;onTransact()&lt;/code&gt;函数。前面分析过libbinder中的类和接口，Service类继承了BnExampleService并重写了onTransact()，这个onTransact中使用了ServiceManager中的函数体，&lt;strong&gt;实际服务的业务逻辑就在这里执行&lt;/strong&gt;。而这个onTransact字面意思也说明，服务本身不主动执行业务逻辑，而是通过响应客户端的调用执行。&lt;/p&gt;
+
+&lt;p&gt;既然使用transaction描述过程，表明Binder调用过程是一个事务，需要符合ACID原则。下图中BC_TRANSACTION和BR_TRANSACTION是一个完整的事务过程，BC_REPLY和BR_REPLY是一个完整的事务过程。Client向Server请求的过程是一个同步过程，Client需要等待driver中的reply，在此期间线程阻塞。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://img.my.csdn.net/uploads/201610/14/1476404609_2669.png&quot; alt=&quot;image&quot; /&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;binder-2&quot;&gt;Binder机制中的多线程&lt;/h2&gt;
+
+&lt;p&gt;还有两行代码没有分析，下面来看看。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;ProcessState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;startThreadPool&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;IPCThreadState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;joinThreadPool&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;第一行看起来是启动了线程池，看看startThreadPool函数怎么实现的：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ProcessState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;startThreadPool&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;AutoMutex&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_l&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mLock&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;!&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mThreadPoolStarted&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;mThreadPoolStarted&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;true&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;spawnPooledThread&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;true&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;对mThreadPoolStarted的判断，表明这个startThreadPool只能启动一次，线程池启动后，这个值为true。接下来看看spawnPooledThread()：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ProcessState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;spawnPooledThread&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;bool&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;isMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mThreadPoolStarted&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;String8&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;makeBinderThreadName&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;ALOGV&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Spawning new pooled thread, name=%s&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;string&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;());&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;sp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Thread&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;t&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;PoolThread&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;isMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;string&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;());&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;函数中创建了一个PoolThread类，PoolThread.run()则创建了新线程。isMain变量表示这个线程是否是线程池中的第一个。上面提到在Binder事务中还要执行&lt;code class=&quot;highlighter-rouge&quot;&gt;IPCThreadState::executeCommand(cmd)&lt;/code&gt;响应驱动传来的消息，当驱动传来BR_SPAWN_LOOPER时，就要执行&lt;code class=&quot;highlighter-rouge&quot;&gt;spawnPooledThread(false)&lt;/code&gt;,这就是驱动传过来的消息，要创建新线程了。&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;case&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BR_SPAWN_LOOPER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;mProcess&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;spawnPooledThread&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;false&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;break&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;PoolThread类的执行体是IPC.threadLoop()函数，函数里是&lt;code class=&quot;highlighter-rouge&quot;&gt;IPCThreadState::self()-&amp;gt;joinThreadPool(mIsMain)&lt;/code&gt;，也就是说线程池里的线程都是在执行&lt;code class=&quot;highlighter-rouge&quot;&gt;joinThreadPool(bool)&lt;/code&gt;。对于第一个线程，这是由应用层创建的，isMain=true；其他线程均是驱动告知目标进程创建的，isMain=false。这里也可以发现，Binder机制下的
+&lt;strong&gt;所有线程都有一个关联的IPCThreadState对象，与驱动之间的通信实际上都是由这个IPCThreadState执行的&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;p&gt;该看看线程执行体了：&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IPCThreadState&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;joinThreadPool&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;bool&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;isMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;mOut&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;writeInt32&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;isMain&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;?&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BC_ENTER_LOOPER&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;BC_REGISTER_LOOPER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;set_sched_policy&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mMyThreadId&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;SP_FOREGROUND&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;status_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;do&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;processPendingDerefs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;getAndExecuteCommand&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;TIMED_OUT&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;!&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;isMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;break&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;!=&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ECONNREFUSED&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;!=&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;EBADF&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;mOut&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;writeInt32&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;BC_EXIT_LOOPER&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;talkWithDriver&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;false&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;这个执行体是一个循环体，使用了两个函数&lt;code class=&quot;highlighter-rouge&quot;&gt;processPendingDerefs()&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;getAndExecuteCommand()&lt;/code&gt;,前者用来处理IPCThreadState对象中Binder对象的引用计数。后者顾名思义就是读取驱动的指令并执行，内部就是调用了&lt;code class=&quot;highlighter-rouge&quot;&gt;talkWithDriver()和executeCommand()&lt;/code&gt;。isMain变量写入mOut，告诉驱动本线程已经建立，同时便于驱动区分
+&lt;strong&gt;应用层主动创建的“主”线程&lt;/strong&gt;和
+&lt;strong&gt;受驱动通知创建的线程&lt;/strong&gt;，非主线程在空闲时会被驱动要求退出。&lt;/p&gt;
+
+&lt;p&gt;应用层进程创建了多个线程与驱动通信，即有多个线程在调用&lt;code class=&quot;highlighter-rouge&quot;&gt;ioctl(mProcess-&amp;gt;driverFD,cmd,&amp;amp;data)&lt;/code&gt;。而同一个进程中的多个线程共用一个驱动文件描述符driverFD，因此有多个线程在等待同一个驱动缓冲区域返回的数据。在这里，
+&lt;strong&gt;驱动记录了每次Binder调用时的线程ID，唤醒对应的线程读取缓冲区数据&lt;/strong&gt;。在Binder机制中，&lt;strong&gt;由内核驱动来处理应用层线程的创建和唤醒&lt;/strong&gt;，这和一般的IO模型不同。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;section-1&quot;&gt;总结&lt;/h2&gt;
+
+&lt;p&gt;以上内容主要是便于&lt;strong&gt;简单、粗暴、直观地&lt;/strong&gt;理解进程间通信的基本原理和基本流程，一般资料中翔实的过程代码细节就不涉及了。&lt;/p&gt;
+
+&lt;p&gt;对于进程间通信，最想了解的不外乎最直观的两点：&lt;strong&gt;数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的&lt;/strong&gt;，这两点背后的机制在于Binder驱动层的&lt;strong&gt;mmap共享内存、红黑树节点和引用的维护&lt;/strong&gt;。理解了以上两点后，剩下的不过是梳理应用层libbinder构建的与底层驱动通信的模型，这其中涉及类与接口的设计、Binder调用事务过程以及多线程。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;references&quot;&gt;References&lt;/h2&gt;
+&lt;p&gt;这是一篇笔记，参考了：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://book.douban.com/subject/26377840/&quot;&gt;刘超 深入解析Android 5.0系统&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://weishu.me/2016/01/12/binder-index-for-newer/&quot;&gt;Weishu’s Notes :Binder学习指南&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://gityuan.com/tags/#binder&quot;&gt;Gityuan #binder&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://my.oschina.net/youranhongcha/blog/149578&quot;&gt;红茶一杯话Binder（ServiceManager篇）&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://blog.csdn.net/coding_glacier/article/details/7520199&quot;&gt;Glacier的专栏:Android Binder机制&lt;/a&gt;&lt;/p&gt;
+</description>
+        <pubDate>Mon, 17 Oct 2016 16:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/</guid>
+        
+        <category>IPC</category>
+        
+        <category>Binder</category>
+        
+        <category>Service</category>
+        
+        <category>多线程</category>
+        
+        
+        <category>Android</category>
+        
+      </item>
+    
+      <item>
+        <title>Android消息机制与多线程</title>
+        <description>&lt;ul id=&quot;markdown-toc&quot;&gt;
+  &lt;li&gt;&lt;a href=&quot;#android&quot; id=&quot;markdown-toc-android&quot;&gt;android中的消息机制&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#asynctask&quot; id=&quot;markdown-toc-asynctask&quot;&gt;AsyncTask异步框架&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#api23&quot; id=&quot;markdown-toc-api23&quot;&gt;看看源码(API23)&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;android&quot;&gt;android中的消息机制&lt;/h2&gt;
+
+&lt;hr /&gt;
+
+&lt;p&gt;Handler、Looper和MessageQueue:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Message被包装在Looper中，且Looper是线程相关的，每个线程只有一个Looper&lt;/li&gt;
+  &lt;li&gt;UI主线程的启动参见framework中的ActivityThread.java，在main(String[] args)函数中启动了Looper.loop消息循环&lt;/li&gt;
+  &lt;li&gt;新建一个Handler对象后，在Handler类的构造函数中会将Handler对象与所在线程关联，因此Handler对应了所在线程的Looper&lt;/li&gt;
+  &lt;li&gt;Handler的sendMessage向所关联的消息队列发送message，message内则包含了对应的消息处理的target:Handler&lt;/li&gt;
+  &lt;li&gt;Looper.loop循环中，message执行了回调message.target.dispatchMessage(message),进而调用了使用者所Overrdie的Handler.handleMessage()方法&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;asynctask&quot;&gt;AsyncTask异步框架&lt;/h2&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;构造函数中的几个泛型参数中：&lt;code class=&quot;highlighter-rouge&quot;&gt;Params...params&lt;/code&gt;是执行&lt;code class=&quot;highlighter-rouge&quot;&gt;AsyncTask.execute(Params...)&lt;/code&gt;时使用的参数，实际上传入&lt;code class=&quot;highlighter-rouge&quot;&gt;doInBackground(Params...)&lt;/code&gt;作为参数;
+&lt;code class=&quot;highlighter-rouge&quot;&gt;Progress... values&lt;/code&gt;表示进度，可在调用&lt;code class=&quot;highlighter-rouge&quot;&gt;publishProgress(Progress...)&lt;/code&gt;时将进度送至主消息循环中；进度同样会传入用户override的&lt;code class=&quot;highlighter-rouge&quot;&gt;onProgressUpdate(Progress)&lt;/code&gt;作为方法参数； &lt;code class=&quot;highlighter-rouge&quot;&gt;Result result&lt;/code&gt;是后台任务方法&lt;code class=&quot;highlighter-rouge&quot;&gt;doInBackgroun(Params...)&lt;/code&gt;的返回值，即任务结果,作为&lt;code class=&quot;highlighter-rouge&quot;&gt;onPostExecute(Result)&lt;/code&gt;方法的参数。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;new AsyncTask().execute(Params...params)&lt;/code&gt;:UI线程中调用，触发异步任务AsyncTask&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;@Override onPreExecute()&lt;/code&gt;:在UI线程中执行，异步任务启动前的准备工作&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;@Override doInBackground(Params...)&lt;/code&gt;:在任务子线程中执行，通常用于理耗时任务。在此方法中用户可以自行调用
+&lt;code class=&quot;highlighter-rouge&quot;&gt;publishProgress(Progress...)&lt;/code&gt;，发送&lt;code class=&quot;highlighter-rouge&quot;&gt;MESSAGE_POST_PROGRESS&lt;/code&gt;消息至主线程，进而触发主线程中的方法&lt;code class=&quot;highlighter-rouge&quot;&gt;onProgressUpdate(Progress...)&lt;/code&gt;&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;@Override onProgressUpdate(Progress...)&lt;/code&gt;:后台任务调用了&lt;code class=&quot;highlighter-rouge&quot;&gt;publishProgress()&lt;/code&gt;后，主线程对消息的回应处理，可用于更新UI&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;@Override onPostExecute(Result)&lt;/code&gt;:任务子线程执行完毕后触发结束消息的处理方法，收尾工作。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;hr /&gt;
+
+&lt;h2 id=&quot;api23&quot;&gt;看看源码(API23)&lt;/h2&gt;
+
+&lt;p&gt;AsyncTask将Handler、Looper和MessageQueuq进行了包装，用线程池执行后台任务。因此主要来看后台任务
+&lt;strong&gt;FutureTask&lt;/strong&gt;、消息处理
+&lt;strong&gt;Handler&lt;/strong&gt;以及
+&lt;strong&gt;ThreadPoolExecutor&lt;/strong&gt;是如何设计的：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;Handler：&lt;/p&gt;
+
+    &lt;p&gt;构造了InternalHandler, 其构造函数获取MainLoop，即Handler是和主线程消息循环绑定的。消息处理方法&lt;code class=&quot;highlighter-rouge&quot;&gt;handleMessage&lt;/code&gt;则对&lt;code class=&quot;highlighter-rouge&quot;&gt;MESSAGE_POST_RESULT&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;MESSAGE_POST_PROGRESS&lt;/code&gt;消息做出了响应。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;FutureTask&lt;/p&gt;
+
+    &lt;p&gt;AsyncTask构造函数创建了Callable类型的对象
+&lt;strong&gt;mWorker&lt;/strong&gt;,call()方法则包装了&lt;code class=&quot;highlighter-rouge&quot;&gt;doInBackGround()&lt;/code&gt;方法，&lt;code class=&quot;highlighter-rouge&quot;&gt;postResult()&lt;/code&gt;方法得到result并发送MESSAGE_POST_RESULT消息。当然，在doInBackground中则可以调用&lt;code class=&quot;highlighter-rouge&quot;&gt;publishProgress(Progress...)&lt;/code&gt;。mWorker用于构造FutureTask类型
+&lt;strong&gt;mFuture&lt;/strong&gt;。mFuture就是任务执行体了。&lt;/p&gt;
+
+    &lt;p&gt;比较了几个版本的源码之后，我发现API22之后，Handler的创建是在mWorker 的call()方法中的&lt;code class=&quot;highlighter-rouge&quot;&gt;postResult()&lt;/code&gt;方法中完成的, 采用了单例模式的&lt;code class=&quot;highlighter-rouge&quot;&gt;getHandler()&lt;/code&gt;创建/获取InternalHandler。早期的版本(Android5.0)则在类的静态成员中就已经创建此Handler对象。尽管这里Handler的创建在子线程，但是由于其构造函数与主线程Looper绑定，因此消息处理仍然在主线程完成。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;executors相关&lt;/p&gt;
+
+    &lt;p&gt;用户在主线程中调用execute(Params…parms)后，实际上执行了&lt;code class=&quot;highlighter-rouge&quot;&gt;executeOnExecutor(sDefaultExecutor, params)&lt;/code&gt;，此方法内首先执行&lt;code class=&quot;highlighter-rouge&quot;&gt;onPreExecute()&lt;/code&gt;，随后则是&lt;strong&gt;执行任务过&lt;/strong&gt;程：&lt;strong&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sDefaultExecutor.execute(mFuture)&lt;/code&gt;&lt;/strong&gt;。&lt;/p&gt;
+
+    &lt;p&gt;再来看看&lt;code class=&quot;highlighter-rouge&quot;&gt;sDefaultExecutors&lt;/code&gt;, 这是一个&lt;code class=&quot;highlighter-rouge&quot;&gt;SerialExecutor&lt;/code&gt;类的实例，其&lt;code class=&quot;highlighter-rouge&quot;&gt;execute()&lt;/code&gt;方法用于维持一个任务队列，并将将Runnable放入mTasks队尾，随后Poll一个task送入&lt;code class=&quot;highlighter-rouge&quot;&gt;THREAD_POOL_EXECUTOR&lt;/code&gt;执行。也就是说&lt;code class=&quot;highlighter-rouge&quot;&gt;sDefaultExecutors&lt;/code&gt;只起到维护任务队列的过程，&lt;strong&gt;真正的执行体还是&lt;code class=&quot;highlighter-rouge&quot;&gt;THREAD_POOL_EXECUTOR&lt;/code&gt;&lt;/strong&gt;，这是一个线程池&lt;code class=&quot;highlighter-rouge&quot;&gt;new ThreadPoolExecutor(...)&lt;/code&gt;&lt;/p&gt;
+
+    &lt;p&gt;值得注意的是，尽管将任务送入了线程池&lt;code class=&quot;highlighter-rouge&quot;&gt;THREAD_POOL_EXECUTOR&lt;/code&gt;，但是&lt;code class=&quot;highlighter-rouge&quot;&gt;SerialExecutor.execute()&lt;/code&gt;方法使用了同步锁，实质上是一个线性入队执行的单线程过程，从类名上也是可以看出来的：&lt;code class=&quot;highlighter-rouge&quot;&gt;public synchronized void execute(final Runnable r)&lt;/code&gt;，即使多个线程提交任务，也得一个一个来。这也是android3.0之后的变化，旧版本的AsyncTask是支持在线程池中多任务并发的。&lt;/p&gt;
+
+    &lt;p&gt;线程池的执行过程不再赘述，submit()和execute()最终都是调用了callable的call()方法。call()过程中发送的两类消息则可以被InternalHandler获取并得到相应处理。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+</description>
+        <pubDate>Mon, 17 Oct 2016 15:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/</guid>
+        
+        <category>消息</category>
+        
+        <category>多线程</category>
+        
+        <category>AsyncTask</category>
+        
+        
+        <category>Android</category>
+        
+      </item>
+    
+      <item>
+        <title>第一篇博客</title>
+        <description>&lt;ul id=&quot;markdown-toc&quot;&gt;
+  &lt;li&gt;&lt;a href=&quot;#section&quot; id=&quot;markdown-toc-section&quot;&gt;博客模板&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#markdown&quot; id=&quot;markdown-toc-markdown&quot;&gt;关于MarkDown&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#jekyllmd&quot; id=&quot;markdown-toc-jekyllmd&quot;&gt;试一试Jekyll的md&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;section&quot;&gt;博客模板&lt;/h2&gt;
+
+&lt;p&gt;使用了&lt;a href=&quot;https://github.com/Gaohaoyang&quot;&gt;Gaohaoyang&lt;/a&gt;的Jekyll模板。说来也巧，高浩阳是我同一级的校友，当年在人人网上很出名，玩儿校园民谣的。&lt;/p&gt;
+
+&lt;h2 id=&quot;markdown&quot;&gt;关于MarkDown&lt;/h2&gt;
+
+&lt;p&gt;写博客中感觉最蛋疼的，还是MarkDown，因为没有统一的标准。我喜欢用有道云笔记，但是转到GitHub上代码缩进就一团糟，而且Github貌似还不支持流程图？关于所见即所得的编辑器，我还用过CmdMarkDown、CSDN、简书，但每家都不太一样，头大。现在只好用Sublime写然后预览了。&lt;/p&gt;
+
+&lt;h2 id=&quot;jekyllmd&quot;&gt;试一试Jekyll的md&lt;/h2&gt;
+
+&lt;div class=&quot;language-java highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;System&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;na&quot;&gt;out&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;na&quot;&gt;println&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;md&quot;&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;以及这样的呢&lt;code class=&quot;highlighter-rouge&quot;&gt;findViewById(R.id.textView)&lt;/code&gt; ，看看效果？&lt;/p&gt;
+
+</description>
+        <pubDate>Mon, 17 Oct 2016 14:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/10/17/welcome/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/10/17/welcome/</guid>
+        
+        <category>murmurs</category>
+        
+        
+        <category>Blogs</category>
+        
+      </item>
     
   </channel>
 </rss>

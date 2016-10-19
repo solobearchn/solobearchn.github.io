@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Android Binder机制浅析</title>
+    <meta name="description" content="  Binder机制：驱动与数据传输笔记：简单、直观、透彻地理解Android Binder进程间通信的基本原理和基本流程：数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的。Binder机制：驱动与数据传输Android中的Binder机制涉及Java应用层、Native应用层（libbinder、C...">
+
+    <link rel="shortcut icon" href="/favicon.ico?" type="image/x-icon">
+    <link rel="icon" href="/favicon.ico?" type="image/x-icon">
+    <link rel="stylesheet" href="/css/fontawesome/css/font-awesome.min.css ">
+    <link rel="stylesheet" href="/css/main.css ">
+    <link rel="canonical" href="http://localhost:4000/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/">
+    <link rel="alternate" type="application/rss+xml" title="Solobear" href="http://localhost:4000/feed.xml ">
+
+
+
+</head>
+
+
+  <body>
+
+    <header id="top">
+    <div class="wrapper">
+        <a href="/" class="brand">Solobear</a>
+        <small>述而不作</small>
+        <button id="headerMenu" class="menu"><i class="fa fa-bars"></i></button>
+        <nav id="headerNav">
+            <ul>
+                <li>
+                    
+                    <a href="/">
+                    
+                        <i class="fa fa-home"></i>Home
+                    </a>
+                </li>
+
+                
+                    
+                    <li>
+                        
+                        <a href="/archive/">
+                        
+                            <i class="fa fa-archive"></i>Archives
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/category/">
+                        
+                            <i class="fa fa-th-list"></i>Categories
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/tag/">
+                        
+                            <i class="fa fa-tags"></i>Tags
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/collection/">
+                        
+                            <i class="fa fa-bookmark"></i>Collections
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/demo/">
+                        
+                            <i class="fa fa-play"></i>Demo
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/about/">
+                        
+                            <i class="fa fa-heart"></i>About
+                        </a>
+                    </li>
+                    
+                
+                    
+                
+                    
+                
+                    
+                
+            </ul>
+        </nav>
+    </div>
+</header>
+
+
+        <div class="page clearfix" post>
+    <div class="left">
+        <h1>Android Binder机制浅析</h1>
+        <div class="label">
+
+            <div class="label-card">
+                <i class="fa fa-calendar"></i>2016-10-17
+            </div>
+
+            <div class="label-card">
+                
+            </div>
+
+            <div class="label-card">
+                
+            </div>
+
+            <div class="label-card">
+            
+
+
+<!-- <span class="point">•</span> -->
+<span class="categories">
+  <i class="fa fa-th-list"></i>
+  
+    
+        <a href="/category/#Android" title="Category: Android" rel="category">Android</a>
+    
+  
+
+  <!-- <span class="point">•</span> -->
+</span>
+
+
+            </div>
+
+            <div class="label-card">
+            
+<!-- <span class="point">•</span> -->
+<span class="pageTag">
+  <i class="fa fa-tags"></i>
+  
+    
+        <!--a href="/tag/#IPC" title="Tag: IPC" rel="tag">IPC</a-->
+        <a href="/tag/#IPC" title="Tag: IPC" rel="tag">IPC</a>&nbsp;
+    
+        <!--a href="/tag/#Binder" title="Tag: Binder" rel="tag">Binder</a-->
+        <a href="/tag/#Binder" title="Tag: Binder" rel="tag">Binder</a>&nbsp;
+    
+        <!--a href="/tag/#Service" title="Tag: Service" rel="tag">Service</a-->
+        <a href="/tag/#Service" title="Tag: Service" rel="tag">Service</a>&nbsp;
+    
+        <!--a href="/tag/#%E5%A4%9A%E7%BA%BF%E7%A8%8B" title="Tag: 多线程" rel="tag">多线程</a-->
+        <a href="/tag/#多线程" title="Tag: 多线程" rel="tag">多线程</a>
+    
+  
+
+</span>
+
+            </div>
+
+        </div>
+        <hr>
+        <article itemscope itemtype="http://schema.org/BlogPosting">
+        <ul id="markdown-toc">
+  <li><a href="#binder" id="markdown-toc-binder">Binder机制：驱动与数据传输</a></li>
+  <li><a href="#binderservicelibbinder" id="markdown-toc-binderservicelibbinder">Binder/Service：libbinder中的接口与对象</a></li>
+  <li><a href="#binder-1" id="markdown-toc-binder-1">Binder对象在驱动中的转换</a></li>
+  <li><a href="#servicemanager" id="markdown-toc-servicemanager">ServiceManager做了什么</a></li>
+  <li><a href="#section" id="markdown-toc-section">服务的注册过程</a></li>
+  <li><a href="#binder-2" id="markdown-toc-binder-2">Binder机制中的多线程</a></li>
+  <li><a href="#section-1" id="markdown-toc-section-1">总结</a></li>
+  <li><a href="#references" id="markdown-toc-references">References</a></li>
+</ul>
+
+<p>笔记：简单、直观、透彻地理解Android Binder进程间通信的基本原理和基本流程：数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的。</p>
+
+<h2 id="binder">Binder机制：驱动与数据传输</h2>
+
+<p>Android中的Binder机制涉及Java应用层、Native应用层（libbinder、C++）和Linux内核层（binder driver，C），其中Java层是对C++ Native层的包装，而应用层进程之间的通信则最终通过内核中的驱动Binder dirver完成。这种跨进程调用，进程之间的数据必须放在内核空间然后等待。</p>
+
+<p><img src="http://img.my.csdn.net/uploads/201610/14/1476404610_9170.png" alt="image" /></p>
+
+<p>Binder机制作为Android的进程间通信方式(IPC)，采用mmap共享内存方式，应用层直接从与kernel共享的缓冲区读取，只产生一次读写提高了数据传输效率。其实质是在Client-Server之间利用虚拟的字符设备/dev/binder作为CS两端的数据传输中介。应用层（Client、Server）的通信是
+<strong>通过与driver的IO</strong>实现的：Client与Driver设备IO，Server则轮询Driver中的数据，并将结果反馈至Driver，Client再从Driver中读取结果。当然这里的Server通信依赖Binder机制，是一个Binder类型的Service。</p>
+
+<p>应用层与内核中的driver之间的IO操作使用统一的接口函数<code class="highlighter-rouge">ioctl(fd,CMD,&amp;bwr)</code>，通过switch(CMD)进行相应的IO操作，所传输的数据则存放在binder_read_write结构体中。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">struct</span> <span class="n">binder_write_read</span> <span class="p">{</span>
+ <span class="n">binder_size_t</span> <span class="n">write_size</span><span class="p">;</span>
+ <span class="n">binder_size_t</span> <span class="n">write_consumed</span><span class="p">;</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">write_buffer</span><span class="p">;</span>
+ <span class="n">binder_size_t</span> <span class="n">read_size</span><span class="p">;</span>
+ <span class="n">binder_size_t</span> <span class="n">read_consumed</span><span class="p">;</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">read_buffer</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre>
+</div>
+
+<p>存放在bwr的buffer中的数据也有格式，即消息ID+binder_transaction_data</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">struct</span> <span class="n">binder_transaction_data</span> <span class="p">{</span>
+ <span class="k">union</span> <span class="p">{</span>
+ <span class="n">__u32</span> <span class="n">handle</span><span class="p">;</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">ptr</span><span class="p">;</span>
+ <span class="p">}</span> <span class="n">target</span><span class="p">;</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">cookie</span><span class="p">;</span>
+ <span class="n">__u32</span> <span class="n">code</span><span class="p">;</span>
+ <span class="n">__u32</span> <span class="n">flags</span><span class="p">;</span>
+ <span class="n">pid_t</span> <span class="n">sender_pid</span><span class="p">;</span>
+ <span class="n">uid_t</span> <span class="n">sender_euid</span><span class="p">;</span>
+ <span class="n">binder_size_t</span> <span class="n">data_size</span><span class="p">;</span>
+ <span class="n">binder_size_t</span> <span class="n">offsets_size</span><span class="p">;</span>
+ <span class="k">union</span> <span class="p">{</span>
+ <span class="k">struct</span> <span class="p">{</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">buffer</span><span class="p">;</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">offsets</span><span class="p">;</span>
+ <span class="p">}</span> <span class="n">ptr</span><span class="p">;</span>
+ <span class="n">__u8</span> <span class="n">buf</span><span class="p">[</span><span class="mi">8</span><span class="p">];</span>
+ <span class="p">}</span> <span class="n">data</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre>
+</div>
+<p>上面的binder_transact_data中包括了从应用层传输过来的Parcel类的数据data，以及Binder对象数据。驱动层只负责操作转换Binder相关的数据，对应用层Parcel中的普通数据并不关心。当然如果Parcel中打包了Binder对象，驱动也会进行处理。Binder对象在跨进程传输时，驱动会对其进行转换。</p>
+
+<hr />
+
+<h2 id="binderservicelibbinder">Binder/Service：libbinder中的接口与对象</h2>
+
+<p><img src="http://gityuan.com/images/binder/addService/add_media_player_service.png" alt="image" />
+<em>来源：Gityuan</em> <a href="http://gityuan.com/2015/11/14/binder-add-service/">Binder系列5—注册服务(addService)</a></p>
+
+<p>IBinder与Service业务接口INTERFACE之间的关系如上图所示，图中没有指出的是BpMediaPlayerService类对BpBinder的聚合关系。</p>
+
+<ol>
+  <li>Binder实体对象：BBinder，Binder服务的提供者，Binder机制中提供服务的Service必须继承自BBinder类；</li>
+  <li>Binder引用对象：BpBinder(handle)，存在于Client端，handle指向服务端。</li>
+  <li>Binder代理对象：BpINTERFACE(BpBinder(handle)):实现了Service服务中的业务接口INTERFACE的接口对象，通过代理对象，Client能够像使用本地对象一样使用远端的实体对象提供的服务。</li>
+  <li>IBinder对象：BBinder+BpBinder的统称。</li>
+</ol>
+
+<p>图中以MediaPlayerService为例，其业务代码接口IMediaPlayerService提供给实体对象和代理对象相同的业务函数接口。BBinder实体对象MediaPlayerService继承了BnINTERFACE，并重写了onTransact()成员函数作为实际的业务处理过程。在CS模式中，Client获取了Service/Binder引用对象后，构造了BpMPS(BpBinder(handle))，在使用业务函数时，其参数经由驱动传递至Service进程，服务进程轮询driver中的数据、执行业务逻辑并reply。</p>
+
+<p>Client当然可以跳过代理对象，直接通过Binder引用对象BpBinder(handle)使用服务，但是代理对象具备了处理业务的接口，依靠native层的
+<strong>libbinder框架带来业务逻辑接口的统一</strong>，Client就像使用本地接口一样使用远程的服务接口。</p>
+
+<p>下面可以简单探讨一下Binder机制下服务类的写法。以ExmapleService为例，其业务逻辑接口由IExampleService定义，业务接口为<code class="highlighter-rouge">virtual int getData();</code>。建立的ExampleService类则实现了业务接口</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">class</span> <span class="nc">ExampleService</span> <span class="o">:</span> <span class="k">public</span> <span class="n">BnExampleService</span>
+<span class="p">{</span>
+<span class="k">public</span><span class="o">:</span>
+    <span class="k">public</span> <span class="kt">int</span> <span class="n">getData</span><span class="p">(){</span><span class="k">return</span> <span class="n">mData</span><span class="p">;}</span>
+<span class="k">private</span><span class="o">:</span>
+    <span class="n">mData</span><span class="o">=</span><span class="mh">0x123456</span><span class="p">;</span>
+<span class="p">}</span>
+
+</code></pre>
+</div>
+
+<p>相应的，BnExmapleService中的onTransact()：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="n">BnExampleService</span><span class="o">::</span><span class="n">onTransact</span><span class="p">(</span><span class="kt">int</span> <span class="n">code</span><span class="p">,</span> <span class="n">Parcel</span> <span class="o">&amp;</span><span class="n">data</span><span class="p">,</span> <span class="n">Parcel</span><span class="o">*</span> <span class="n">reply</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">switch</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="k">case</span> <span class="n">GET_DATA</span><span class="p">:</span>
+            <span class="n">reply</span><span class="o">-&gt;</span><span class="n">writeInt</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="n">getData</span><span class="p">());</span>
+    <span class="p">}</span>
+    <span class="p">......</span>
+<span class="p">}</span>
+
+</code></pre>
+</div>
+
+<p>代理类BpExmaple应当这样实现</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">class</span> <span class="nc">BpExampleService</span><span class="o">:</span><span class="k">public</span> <span class="n">BpInterface</span><span class="o">&lt;</span><span class="n">IExampleService</span><span class="o">&gt;</span>
+<span class="p">{</span>
+<span class="k">public</span><span class="o">:</span>
+    <span class="k">virtual</span> <span class="kt">int</span> <span class="n">getData</span><span class="p">()</span>
+    <span class="p">{</span>
+        <span class="n">remote</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">transact</span><span class="p">(</span><span class="n">GET_DATA</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">reply</span><span class="p">);</span>
+        <span class="k">return</span> <span class="n">reply</span><span class="p">.</span><span class="n">readInt</span><span class="p">();</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre>
+</div>
+<p>Client获得代理类BpExample，其引用对象remote=BpBinder(handle)。引用对象的transact()实际上交由IPCThreadState执行，其请求码（函数号）为GET_DATA。Service端收到请求码后，调用<code class="highlighter-rouge">BBinder::transact()</code>，继而调用<code class="highlighter-rouge">ExampleServic::onTransact()</code>返回。</p>
+
+<hr />
+
+<h2 id="binder-1">Binder对象在驱动中的转换</h2>
+
+<p>Binder对象在传输中是跨进程的，其生命周期的管理是一个重点。服务的实体BBinder死亡后，Client进程中的引用对象也应当删除。Client进程中的ProcessState管理本进程中的所有Binder引用类的创建和释放，而引用对象和实体对象之间的关联则由驱动负责管理。Driver驱动维护了一颗红黑树，每个进程中的binder_proc结构体都插入树中，每个进程中的binder_proc都保存了Binder对象的node节点表和node_ref引用表。Binder对象的插入和查询就是在这棵树中执行的，</p>
+
+<p>在传输过程中，Binder实体对象和引用对象均使用
+<strong>flat_binder_object结构体来表示Binder对象</strong>。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">struct</span> <span class="n">flat_binder_object</span> <span class="p">{</span>
+ <span class="n">__u32</span> <span class="n">type</span><span class="p">;</span>
+ <span class="n">__u32</span> <span class="n">flags</span><span class="p">;</span>
+ <span class="k">union</span> <span class="p">{</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">binder</span><span class="p">;</span>
+ <span class="n">__u32</span> <span class="n">handle</span><span class="p">;</span>
+ <span class="p">};</span>
+ <span class="n">binder_uintptr_t</span> <span class="n">cookie</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre>
+</div>
+
+<p>以上type常用BINDER_TYPE_BINDER/BINDER_TYPE_HANDLE标识，flag表示传输方式，union则存储了binder的本地指针或者远程引用对象的句柄handle，cookie只在打包BBinder中使用，存放了BBinder的指针。</p>
+
+<p>Driver中的一个重要工作就是处理传递中的Binder对象，driver会将flat_binder_object结构体拆开并做相应操作。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">switch</span> <span class="p">(</span><span class="n">type</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">case</span> <span class="n">BINDER_TYPE_BINDER</span><span class="p">:</span>
+    <span class="k">case</span> <span class="n">BINDER_TYPE_WEAK_BINDER</span><span class="p">:</span>
+    <span class="p">......</span>
+    <span class="k">struct</span> <span class="n">binder_node</span> <span class="o">*</span><span class="n">node</span> <span class="o">=</span> <span class="n">binder_get_node</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">binder</span><span class="p">);</span>
+    <span class="p">......</span>
+    <span class="n">binder_get_ref_for_node</span><span class="p">(</span><span class="n">target_proc</span><span class="p">,</span> <span class="n">node</span><span class="p">);</span>
+    <span class="p">...</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">type</span> <span class="o">==</span> <span class="n">BINDER_TYPE_BINDER</span><span class="p">)</span>
+        <span class="n">fp</span><span class="o">-&gt;</span><span class="n">type</span> <span class="o">=</span> <span class="n">BINDER_TYPE_HANDLE</span><span class="p">;</span>
+    <span class="p">......</span>
+    <span class="n">fp</span><span class="o">-&gt;</span><span class="n">handle</span> <span class="o">=</span> <span class="n">ref</span><span class="o">-&gt;</span><span class="n">desc</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>当类型为BINDER_TYPE_BINDER时，这是一个Binder实体对象，此时会使用binder_get_node在发送进程的Binder对象节点nodes中查找节点，使用<code class="highlighter-rouge">binder_get_ref_for_node</code>在目标进程中查找引用节点，若无则创建新节点。修改type为handle类型，将节点引用表中的序号赋给handle。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">case</span> <span class="n">BINDER_TYPE_HANDLE</span><span class="p">:</span>
+<span class="k">case</span> <span class="n">BINDER_TYPE__HANDLE</span><span class="p">:</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">binder_ref</span> <span class="o">*</span><span class="n">ref</span> <span class="o">=</span> <span class="n">binder_get_ref</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">handle</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ref</span><span class="o">-&gt;</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">proc</span> <span class="o">==</span> <span class="n">target_proc</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">fp</span><span class="o">-&gt;</span><span class="n">type</span> <span class="o">=</span> <span class="n">BINDER_TYPE_BINDER</span><span class="p">;</span>
+        <span class="n">fp</span><span class="o">-&gt;</span><span class="n">binder</span> <span class="o">=</span> <span class="n">ref</span><span class="o">-&gt;</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">ptr</span><span class="p">;</span>
+        <span class="n">fp</span><span class="o">-&gt;</span><span class="n">cookie</span> <span class="o">=</span> <span class="n">ref</span><span class="o">-&gt;</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">cookie</span><span class="p">;</span>
+    <span class="k">else</span>
+        <span class="k">struct</span> <span class="n">binder_ref</span> <span class="o">*</span><span class="n">new_ref</span><span class="o">=</span><span class="n">binder_get_ref_for_node</span><span class="p">(</span><span class="n">target_proc</span><span class="p">,</span> <span class="n">ref</span><span class="o">-&gt;</span><span class="n">node</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>当类型为BINDER_TYPE_HANDLE时，这是一个Binder引用对象，首先<code class="highlighter-rouge">binder_get_ref(proc, fp-&gt;handle)</code>根据handle在发送进程的节点引用表中查找引用节点。当目标进程就是Binder实体对象所在进程时，修改type并设置字段，其中cookie存放了BBinder指针。如果不是Binder对象所在进程，则在目标进程中新建一个节点对象的引binder_ref，type不会改动。这个binder_ref数据结构如下：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">struct</span> <span class="n">binder_ref</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">rb_node</span> <span class="n">rb_node_desc</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">rb_node</span> <span class="n">rb_node_node</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">hlist_node</span> <span class="n">node_entry</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">binder_proc</span> <span class="o">*</span><span class="n">proc</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">binder_node</span> <span class="o">*</span><span class="n">node</span><span class="p">;</span>
+    <span class="kt">uint32_t</span> <span class="n">desc</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">strong</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">weak</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">binder_ref_death</span> <span class="o">*</span><span class="n">death</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre>
+</div>
+<p>其中，数值<strong>uint32_desc</strong>就是引用项在红黑树中的序号，即BpBinder中的mHandle。</p>
+
+<p>根据上面的过程，可以简要分析常用场景中Binder对象在整个传输过程中做了怎样的转换：</p>
+
+<p><img src="http://img.my.csdn.net/uploads/201610/14/1476408704_3527.png" alt="image" />
+Binder机制中CS两端通信的数据单元是Parcel，Binder对象写入Parcel中时需要使用<code class="highlighter-rouge">writeStrongBinder</code>函数，读取Binder对象则使用<code class="highlighter-rouge">readStrongBinder</code>,当然这个过程中Binder对象仍然要用flat_binder_object结构体表示。</p>
+
+<p>当某个Server/Service要向ServiceManager注册时，发送本地的Binder实体对象，写入Parcel中的Binder如下：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="n">obj</span><span class="p">.</span><span class="n">type</span> <span class="o">=</span> <span class="n">BINDER_TYPE_BINDER</span><span class="p">;</span>
+<span class="n">obj</span><span class="p">.</span><span class="n">binder</span> <span class="o">=</span> <span class="k">reinterpret_cast</span><span class="o">&lt;</span><span class="kt">uintptr_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">local</span><span class="o">-&gt;</span><span class="n">getWeakRefs</span><span class="p">());</span>
+<span class="n">obj</span><span class="p">.</span><span class="n">cookie</span> <span class="o">=</span> <span class="k">reinterpret_cast</span><span class="o">&lt;</span><span class="kt">uintptr_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">local</span><span class="p">);</span>
+</code></pre>
+</div>
+<p>此Binder对象数据经驱动转换后type=BINDER_TYPE_HANDLE，可以注册进ServiceManager了。而当某个第三方Client想要获取这个Service时，ServiceManager发送给驱动的Binder对象如下</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>obj-&gt;type = BINDER_TYPE_HANDLE;
+obj-&gt;handle = handle;
+</code></pre>
+</div>
+
+<p>第三方Client进程中并没有这个Binder实体，因此Client进程中新建了一个节点引用这个Binder，拿到了mHandle，后续利用<code class="highlighter-rouge">readStrongBinder</code>构造了代理对象。</p>
+
+<p>而当这个第三方Client手握handle句柄值，想调用Service所在进程的业务逻辑时，向驱动发送的Binder对象其type=BINDER_TYPE_HANDLE。驱动根据根据handle找到了目标进程，发现Client所引用的Binder对象就在目标进程里，于是改动这个结构体内的type,target和cookie。文章后面会提到，
+<strong>正是由于这种转换，Service拿到转换后的Binder对象，会执行相应的业务逻辑并返回结果</strong>。</p>
+
+<p>总而言之，CS模型中的Binder对象经由驱动往来穿梭，驱动通过对flat_binder_object结构的操作,实现了Binder对象的不同状态的转变。</p>
+
+<hr />
+
+<h2 id="servicemanager">ServiceManager做了什么</h2>
+
+<p>Client和Service之间的通信，依赖Driver驱动，同时也要依赖ServiceManager在这个通信过程中起到名字查询作用。ServiceManager是一个守护进程，为各类Binder Service提供
+<strong>名字查询功能，以及返回Binder Service的引用</strong>。ServiceManager同样依赖Binder机制提供服务，其引用句柄handle=0。SM提供给外部的服务主要是注册服务<code class="highlighter-rouge">addService(sp&lt;IBinder&gt;)</code>，查询和返回服务<code class="highlighter-rouge">getService(String* name)</code>等，其接口函数定义在IServiceManager.h中。</p>
+
+<p>ServiceManager的主函数没有依赖libbinder框架，而是自建了一个简单的类似原理的bind.c和主函数:</p>
+<blockquote>
+  <p>frameworks\native\cmds\servicemanager\service_manager.c,</p>
+</blockquote>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span><span class="p">,</span> <span class="kt">char</span> <span class="o">**</span><span class="n">argv</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">bs</span> <span class="o">=</span> <span class="n">binder_open</span><span class="p">(</span><span class="mi">128</span><span class="o">*</span><span class="mi">1024</span><span class="p">);</span>
+    
+    <span class="k">if</span> <span class="p">(</span><span class="n">binder_become_context_manager</span><span class="p">(</span><span class="n">bs</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">ALOGE</span><span class="p">(</span><span class="s">"cannot become context manager (%s)</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">strerror</span><span class="p">(</span><span class="n">errno</span><span class="p">));</span>
+        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="p">...</span> <span class="p">...</span>
+    <span class="n">selinux_enabled</span> <span class="o">=</span> <span class="n">is_selinux_enabled</span><span class="p">();</span>
+    <span class="n">sehandle</span> <span class="o">=</span> <span class="n">selinux_android_service_context_handle</span><span class="p">();</span>
+    <span class="n">svcmgr_handle</span> <span class="o">=</span> <span class="n">BINDER_SERVICE_MANAGER</span><span class="p">;</span>
+    <span class="n">binder_loop</span><span class="p">(</span><span class="n">bs</span><span class="p">,</span> <span class="n">svcmgr_handler</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>主要步骤是，对/dev/binder设备进行初始化后，将本进程设置为Binder管理进程，检查权限，最后进入消息循环
+binder_loop(bs, svcmgr_handler)
+中轮询Driver中的数据，使用消息处理函数svcmgr_handler处理请求。</p>
+
+<p>ServiceManager维护了一个服务列表svc_list，列表内是svcinfo结构体。注册服务时则将新的Service加入列表，查询/获取服务则将搜索列表返回相应服务的handle：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="n">obj</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">=</span> <span class="mh">0x7f</span> <span class="o">|</span> <span class="n">FLAT_BINDER_FLAG_ACCEPTS_FDS</span><span class="p">;</span>
+<span class="n">obj</span><span class="o">-&gt;</span><span class="n">type</span> <span class="o">=</span> <span class="n">BINDER_TYPE_HANDLE</span><span class="p">;</span>
+<span class="n">obj</span><span class="o">-&gt;</span><span class="n">handle</span> <span class="o">=</span> <span class="n">handle</span><span class="p">;</span>
+<span class="n">obj</span><span class="o">-&gt;</span><span class="n">cookie</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</code></pre>
+</div>
+
+<p>上面的Binder对象obj，是一个flat_binder_object结构体，ServiceManager将obj传输至驱动。</p>
+
+<p>需要指出的是，Binder服务的句柄handle是一个u_int32数值，只对发起请求的Client端进程和驱动有意义，不同进程中指代相同Binder实体的句柄在数值上可能是不同的，ServiceManager记录了所有系统service对应的handle，当用户进程需要获取某个系统service的代理时，SMS就会在内部按service名查找到合适的句柄值handle，并“逻辑上”传递给用户进程，于是用户进程会得到一个新的合法句柄值，这个新句柄值可能在数值上和SMS所记录的句柄值不同，然而，它们指代的却是同一个Service实体，句柄的合法性是由Binder驱动保证的。</p>
+
+<hr />
+
+<h2 id="section">服务的注册过程</h2>
+
+<p>这一段各种资料讲的比较多，常常以MediaPlayerService的注册过程入手分析，在注册过程中，MPS是一个Client，向ServiceManager这个Server注册自己。当注册完毕后，MPS充当一个服务的角色，轮询驱动中的消息。</p>
+<blockquote>
+  <p>frameworks\av\media\mediaserver\main_mediaserver.cpp</p>
+</blockquote>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span> <span class="n">__unused</span><span class="p">,</span> <span class="kt">char</span><span class="o">**</span> <span class="n">argv</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">sp</span><span class="o">&lt;</span><span class="n">ProcessState</span><span class="o">&gt;</span> <span class="n">proc</span><span class="p">(</span><span class="n">ProcessState</span><span class="o">::</span><span class="n">self</span><span class="p">());</span>    
+    <span class="n">sp</span><span class="o">&lt;</span><span class="n">IServiceManager</span><span class="o">&gt;</span> <span class="n">sm</span> <span class="o">=</span> <span class="n">defaultServiceManager</span><span class="p">();</span>      
+    <span class="n">MediaPlayerService</span><span class="o">::</span><span class="n">instantiate</span><span class="p">();</span>     
+    <span class="n">ProcessState</span><span class="o">::</span><span class="n">self</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">startThreadPool</span><span class="p">();</span>    
+    <span class="n">IPCThreadState</span><span class="o">::</span><span class="n">self</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">joinThreadPool</span><span class="p">();</span>
+ <span class="p">}</span>
+</code></pre>
+</div>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>proc(ProcessState::self())
+</code></pre>
+</div>
+
+<p>每个Client进程都要对本进程中Binder引用对象进行生命周期管理，这里打开了/dev/binder驱动,mmap了1MB空间用于binder事务。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>defaultServiceManager():获取ServiceManager，准确的说是获取ServiceManager的代理
+</code></pre>
+</div>
+
+<p>这个函数经过IIntergace.h的宏展开后，进入了ISM.asInterface()函数：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code> <span class="n">android</span><span class="o">::</span><span class="n">sp</span><span class="o">&lt;</span><span class="n">IServiceManager</span><span class="o">&gt;</span> <span class="n">IServiceManager</span><span class="o">::</span><span class="n">asInterface</span><span class="p">(</span><span class="k">const</span> <span class="n">android</span><span class="o">::</span><span class="n">sp</span><span class="o">&lt;</span><span class="n">android</span><span class="o">::</span><span class="n">IBinder</span><span class="o">&gt;&amp;</span> <span class="n">obj</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">android</span><span class="o">::</span><span class="n">sp</span><span class="o">&lt;</span><span class="n">IServiceManager</span><span class="o">&gt;</span> <span class="n">intr</span><span class="p">;</span>
+    <span class="k">if</span><span class="p">(</span><span class="n">obj</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">intr</span> <span class="o">=</span> <span class="k">static_cast</span><span class="o">&lt;</span><span class="n">IServiceManager</span> <span class="o">*&gt;</span><span class="p">(</span><span class="n">obj</span><span class="o">-&gt;</span><span class="n">queryLocalInterface</span><span class="p">(</span><span class="n">IServiceManager</span><span class="o">::</span><span class="n">descriptor</span><span class="p">).</span><span class="n">get</span><span class="p">());</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">intr</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">intr</span> <span class="o">=</span> <span class="k">new</span> <span class="n">BpServiceManager</span><span class="p">(</span><span class="n">obj</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">intr</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>注意到判断函数queryLocalInterface(),这是IBinder接口中的函数，默认返回null。BpBinder类并没有重写这个函数，intr=null，asInterface返回new BpServiceManager(BpBinder),这样就获取了ServiceManager的代理对象。也就是说，
+<strong>Client拿到Binder引用对象后，就得到了Binder代理对象</strong>，</p>
+
+<p>而如果是Binder实体对象，继承自BnInterface，而BnInterface重写了这个函数，判断对象的描述字符串descriptor是否和本类相同，如果符合就返回这个指针。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">template</span><span class="o">&lt;</span><span class="k">typename</span> <span class="n">INTERFACE</span><span class="o">&gt;</span>
+<span class="kr">inline</span> <span class="n">sp</span><span class="o">&lt;</span><span class="n">IInterface</span><span class="o">&gt;</span> <span class="n">BnInterface</span><span class="o">&lt;</span><span class="n">INTERFACE</span><span class="o">&gt;::</span><span class="n">queryLocalInterface</span><span class="p">(</span>
+        <span class="k">const</span> <span class="n">String16</span><span class="o">&amp;</span> <span class="n">_descriptor</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">_descriptor</span> <span class="o">==</span> <span class="n">INTERFACE</span><span class="o">::</span><span class="n">descriptor</span><span class="p">)</span> <span class="k">return</span> <span class="k">this</span><span class="p">;</span>
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>从CS两端的角度来看这个，Client端获取的必定是引用对象，因此使用BpBinder创建了代理对象。Service端收到实体对象后，如果类描述符合，则可以直接使用本进程中的对象，因此接返回对象指针。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>MediaPlayerService::instantiate()    
+</code></pre>
+</div>
+
+<p>这一行也就是<code class="highlighter-rouge">BpServiceManager(BpBinder(0)).addService(Str name,new MPS)</code>，接着进入IServiceManager的业务逻辑，利用了指向ServiceManager的引用对象BpBinder(0)。接着进入BpBinder.transact过程，实质上还是将任务交给了IPCThreadState:<code class="highlighter-rouge">IPC-&gt;transact(mHandle, code, data, reply,flags)</code>，对于Client来说，所需数据就通过<strong>reply</strong>获取。</p>
+
+<p>每个线程都有一个IPCThreadState，成员变量mProcess保存了ProcessState变量(每个进程只有一个)，mIn用来接收来自Binder设备的数据，mOut用来存储发往Binder设备的数据，默认大小均为256字节。IPCThreadState进行transact事务处理分3部分：
+<strong>errorCheck()数据错误检查，writeTransactionData()写入传输数据，waitForResponse()等待驱动数据响应</strong>。</p>
+
+<p>其中，waitForResponse()是一个死循环，利用<code class="highlighter-rouge">IPC.talkWithDriver()</code>与驱动之间通信,<code class="highlighter-rouge">IPC.talkWithDriver()</code>中又调用了<code class="highlighter-rouge">ioctl(mProcess-&gt;mDriverFD, BINDER_WRITE_READ, &amp;bwr)</code>进入与内核，开始于驱动的通信,ioctl调用了内核中的binder.c。</p>
+
+<blockquote>
+  <p>kernel\drivers\staging\android\binder.c</p>
+</blockquote>
+
+<p>进入ioctl后，经由<code class="highlighter-rouge">binder_thread_write()</code>中的判断分支进入<code class="highlighter-rouge">binder_transaction()</code>过程。binder_transaction()内容比较多，主要步骤是：</p>
+
+<ol>
+  <li>找到代表目标进程的节点，handle=0则指向ServiceManager</li>
+  <li>搜寻目标线程，使用目标线程中的todo队列</li>
+  <li>对本次Binder调用事务过程创建binder_transaction结构体，设置相应的数据</li>
+  <li>在目标进程的缓冲区分配空间，并复制用户进程的数据到内核</li>
+  <li><strong>处理传输的Binder对象</strong>，前面已经分析了这个过程</li>
+  <li>将本次调用的binder_transaction结构体链接到线程的transaction_stack列表中.</li>
+</ol>
+
+<p>binder_thread_write()调用结束后，将继续binder_thread_read()处理当前线程和进程中的todo队列。</p>
+
+<p>下面离开内核，回到应用层。在waitForResponse()这个循环中，除了talkWithDriver()，还调用了<code class="highlighter-rouge">IPC.executeCommand(cmd)</code>过程，用于响应驱动传来的指令，处理来自Driver的数据了。
+<strong>对于Service来说，业务逻辑就在这里执行。</strong></p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="n">status_t</span> <span class="n">IPCThreadState</span><span class="o">::</span><span class="n">executeCommand</span><span class="p">(</span><span class="kt">int32_t</span> <span class="n">cmd</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">switch</span> <span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">case</span> <span class="n">BR_TRANSACTION</span><span class="p">:</span>
+    <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">tr</span><span class="p">.</span><span class="n">target</span><span class="p">.</span><span class="n">ptr</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">sp</span><span class="o">&lt;</span><span class="n">BBinder</span><span class="o">&gt;</span> <span class="n">b</span><span class="p">((</span><span class="n">BBinder</span><span class="o">*</span><span class="p">)</span><span class="n">tr</span><span class="p">.</span><span class="n">cookie</span><span class="p">);</span>
+            <span class="n">error</span> <span class="o">=</span> <span class="n">b</span><span class="o">-&gt;</span><span class="n">transact</span><span class="p">(</span><span class="n">tr</span><span class="p">.</span><span class="n">code</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">reply</span><span class="p">,</span> <span class="n">tr</span><span class="p">.</span><span class="n">flags</span><span class="p">);</span> 
+            <span class="p">}</span> 
+    <span class="p">......</span>
+        <span class="p">}</span>
+    <span class="p">}</span>    
+    <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>在驱动对Binder对象的转换过程中提到，Client发送的Binder对象进入Service所在的目标进程时，其target、cookier都做了转换。对于经驱动处理后的Binder对象，由于Service进程自身就是Binder实体对象，因此执行了以上的<code class="highlighter-rouge">BBinder-&gt;transact()</code>函数。<code class="highlighter-rouge">BBinder::transact()</code>函数又调用了Binder实体类的<code class="highlighter-rouge">onTransact()</code>函数。前面分析过libbinder中的类和接口，Service类继承了BnExampleService并重写了onTransact()，这个onTransact中使用了ServiceManager中的函数体，<strong>实际服务的业务逻辑就在这里执行</strong>。而这个onTransact字面意思也说明，服务本身不主动执行业务逻辑，而是通过响应客户端的调用执行。</p>
+
+<p>既然使用transaction描述过程，表明Binder调用过程是一个事务，需要符合ACID原则。下图中BC_TRANSACTION和BR_TRANSACTION是一个完整的事务过程，BC_REPLY和BR_REPLY是一个完整的事务过程。Client向Server请求的过程是一个同步过程，Client需要等待driver中的reply，在此期间线程阻塞。</p>
+
+<p><img src="http://img.my.csdn.net/uploads/201610/14/1476404609_2669.png" alt="image" /></p>
+
+<hr />
+
+<h2 id="binder-2">Binder机制中的多线程</h2>
+
+<p>还有两行代码没有分析，下面来看看。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="n">ProcessState</span><span class="o">::</span><span class="n">self</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">startThreadPool</span><span class="p">();</span>
+<span class="n">IPCThreadState</span><span class="o">::</span><span class="n">self</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">joinThreadPool</span><span class="p">();</span>
+</code></pre>
+</div>
+
+<p>第一行看起来是启动了线程池，看看startThreadPool函数怎么实现的：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="kt">void</span> <span class="n">ProcessState</span><span class="o">::</span><span class="n">startThreadPool</span><span class="p">()</span>
+<span class="p">{</span>
+    <span class="n">AutoMutex</span> <span class="n">_l</span><span class="p">(</span><span class="n">mLock</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">mThreadPoolStarted</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">mThreadPoolStarted</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+        <span class="n">spawnPooledThread</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>对mThreadPoolStarted的判断，表明这个startThreadPool只能启动一次，线程池启动后，这个值为true。接下来看看spawnPooledThread()：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="kt">void</span> <span class="n">ProcessState</span><span class="o">::</span><span class="n">spawnPooledThread</span><span class="p">(</span><span class="kt">bool</span> <span class="n">isMain</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">mThreadPoolStarted</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">String8</span> <span class="n">name</span> <span class="o">=</span> <span class="n">makeBinderThreadName</span><span class="p">();</span>
+        <span class="n">ALOGV</span><span class="p">(</span><span class="s">"Spawning new pooled thread, name=%s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">name</span><span class="p">.</span><span class="n">string</span><span class="p">());</span>
+        <span class="n">sp</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">&gt;</span> <span class="n">t</span> <span class="o">=</span> <span class="k">new</span> <span class="n">PoolThread</span><span class="p">(</span><span class="n">isMain</span><span class="p">);</span>
+        <span class="n">t</span><span class="o">-&gt;</span><span class="n">run</span><span class="p">(</span><span class="n">name</span><span class="p">.</span><span class="n">string</span><span class="p">());</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+</div>
+
+<p>函数中创建了一个PoolThread类，PoolThread.run()则创建了新线程。isMain变量表示这个线程是否是线程池中的第一个。上面提到在Binder事务中还要执行<code class="highlighter-rouge">IPCThreadState::executeCommand(cmd)</code>响应驱动传来的消息，当驱动传来BR_SPAWN_LOOPER时，就要执行<code class="highlighter-rouge">spawnPooledThread(false)</code>,这就是驱动传过来的消息，要创建新线程了。</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="k">case</span> <span class="n">BR_SPAWN_LOOPER</span><span class="p">:</span>
+        <span class="n">mProcess</span><span class="o">-&gt;</span><span class="n">spawnPooledThread</span><span class="p">(</span><span class="nb">false</span><span class="p">);</span>
+        <span class="k">break</span><span class="p">;</span>
+</code></pre>
+</div>
+
+<p>PoolThread类的执行体是IPC.threadLoop()函数，函数里是<code class="highlighter-rouge">IPCThreadState::self()-&gt;joinThreadPool(mIsMain)</code>，也就是说线程池里的线程都是在执行<code class="highlighter-rouge">joinThreadPool(bool)</code>。对于第一个线程，这是由应用层创建的，isMain=true；其他线程均是驱动告知目标进程创建的，isMain=false。这里也可以发现，Binder机制下的
+<strong>所有线程都有一个关联的IPCThreadState对象，与驱动之间的通信实际上都是由这个IPCThreadState执行的</strong>。</p>
+
+<p>该看看线程执行体了：</p>
+
+<div class="language-c++ highlighter-rouge"><pre class="highlight"><code><span class="kt">void</span> <span class="n">IPCThreadState</span><span class="o">::</span><span class="n">joinThreadPool</span><span class="p">(</span><span class="kt">bool</span> <span class="n">isMain</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">mOut</span><span class="p">.</span><span class="n">writeInt32</span><span class="p">(</span><span class="n">isMain</span> <span class="o">?</span> <span class="n">BC_ENTER_LOOPER</span> <span class="o">:</span> <span class="n">BC_REGISTER_LOOPER</span><span class="p">);</span>
+    <span class="n">set_sched_policy</span><span class="p">(</span><span class="n">mMyThreadId</span><span class="p">,</span> <span class="n">SP_FOREGROUND</span><span class="p">);</span>
+    <span class="n">status_t</span> <span class="n">result</span><span class="p">;</span>
+    <span class="k">do</span> <span class="p">{</span>
+        <span class="n">processPendingDerefs</span><span class="p">();</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">getAndExecuteCommand</span><span class="p">();</span>
+        <span class="k">if</span><span class="p">(</span><span class="n">result</span> <span class="o">==</span> <span class="n">TIMED_OUT</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">isMain</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span> <span class="k">while</span> <span class="p">(</span><span class="n">result</span> <span class="o">!=</span> <span class="o">-</span><span class="n">ECONNREFUSED</span> <span class="o">&amp;&amp;</span> <span class="n">result</span> <span class="o">!=</span> <span class="o">-</span><span class="n">EBADF</span><span class="p">);</span>
+    <span class="n">mOut</span><span class="p">.</span><span class="n">writeInt32</span><span class="p">(</span><span class="n">BC_EXIT_LOOPER</span><span class="p">);</span>
+    <span class="n">talkWithDriver</span><span class="p">(</span><span class="nb">false</span><span class="p">);</span>
+<span class="p">}</span>
+
+</code></pre>
+</div>
+
+<p>这个执行体是一个循环体，使用了两个函数<code class="highlighter-rouge">processPendingDerefs()</code>和<code class="highlighter-rouge">getAndExecuteCommand()</code>,前者用来处理IPCThreadState对象中Binder对象的引用计数。后者顾名思义就是读取驱动的指令并执行，内部就是调用了<code class="highlighter-rouge">talkWithDriver()和executeCommand()</code>。isMain变量写入mOut，告诉驱动本线程已经建立，同时便于驱动区分
+<strong>应用层主动创建的“主”线程</strong>和
+<strong>受驱动通知创建的线程</strong>，非主线程在空闲时会被驱动要求退出。</p>
+
+<p>应用层进程创建了多个线程与驱动通信，即有多个线程在调用<code class="highlighter-rouge">ioctl(mProcess-&gt;driverFD,cmd,&amp;data)</code>。而同一个进程中的多个线程共用一个驱动文件描述符driverFD，因此有多个线程在等待同一个驱动缓冲区域返回的数据。在这里，
+<strong>驱动记录了每次Binder调用时的线程ID，唤醒对应的线程读取缓冲区数据</strong>。在Binder机制中，<strong>由内核驱动来处理应用层线程的创建和唤醒</strong>，这和一般的IO模型不同。</p>
+
+<hr />
+
+<h2 id="section-1">总结</h2>
+
+<p>以上内容主要是便于<strong>简单、粗暴、直观地</strong>理解进程间通信的基本原理和基本流程，一般资料中翔实的过程代码细节就不涉及了。</p>
+
+<p>对于进程间通信，最想了解的不外乎最直观的两点：<strong>数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的</strong>，这两点背后的机制在于Binder驱动层的<strong>mmap共享内存、红黑树节点和引用的维护</strong>。理解了以上两点后，剩下的不过是梳理应用层libbinder构建的与底层驱动通信的模型，这其中涉及类与接口的设计、Binder调用事务过程以及多线程。</p>
+
+<hr />
+
+<h2 id="references">References</h2>
+<p>这是一篇笔记，参考了：</p>
+
+<p><a href="https://book.douban.com/subject/26377840/">刘超 深入解析Android 5.0系统</a></p>
+
+<p><a href="http://weishu.me/2016/01/12/binder-index-for-newer/">Weishu’s Notes :Binder学习指南</a></p>
+
+<p><a href="http://gityuan.com/tags/#binder">Gityuan #binder</a></p>
+
+<p><a href="https://my.oschina.net/youranhongcha/blog/149578">红茶一杯话Binder（ServiceManager篇）</a></p>
+
+<p><a href="http://blog.csdn.net/coding_glacier/article/details/7520199">Glacier的专栏:Android Binder机制</a></p>
+
+        </article>
+        <hr>
+
+        
+        
+            
+            
+                
+                    
+                
+                    
+                
+                    
+                
+                    
+                
+            
+                
+                    
+                
+                    
+                
+                    
+                
+                    
+                        
+                        <h2 id="similar_posts">Similar Posts</h2>
+                        <ul>
+                        
+                        <li class="relatedPost">
+                            <a href="http://localhost:4000/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/">Android消息机制与多线程
+                            
+                            </a>
+                        </li>
+                        
+                        
+                    
+                
+            
+                
+                    
+                
+                    
+                
+                    
+                
+                    
+                
+            
+        
+            
+            
+                
+                    
+                
+                    
+                
+                    
+                
+                    
+                
+            
+        
+        
+            </ul>
+        
+
+        <div class="post-recent">
+    <div class="pre">
+        
+        <p><strong>上一篇</strong> <a href="/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/">Android消息机制与多线程</a></p>
+        
+    </div>
+    <div class="nex">
+
+        
+    </div>
+</div>
+
+
+        
+        <h2 id="comments">Comments</h2>
+        
+<!-- 多说评论框 start -->
+<div class="ds-thread" data-thread-key="http://localhost:4000/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/" data-title="Android Binder机制浅析" data-url="http://localhost:4000/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/"></div>
+<!-- 多说评论框 end -->
+<!-- 多说公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    var duoshuoQuery = {
+        short_name: "solobearchn"
+    };
+    (function() {
+        var ds = document.createElement('script');
+        ds.type = 'text/javascript';
+        ds.async = true;
+        ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+        ds.charset = 'UTF-8';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds);
+    })();
+</script>
+<!-- 多说公共JS代码 end -->
+
+
+
+
+        
+
+
+    </div>
+    <button class="anchor"><i class="fa fa-anchor"></i></button>
+    <div class="right">
+        <div class="wrap">
+
+            <!-- Content -->
+            <div class="side content">
+                <div>
+                    Content
+                </div>
+                <ul id="content-side" class="content-ul">
+                    <li><a href="#similar_posts">Similar Posts</a></li>
+                    <li><a href="#comments">Comments</a></li>
+                </ul>
+            </div>
+            <!-- 其他div框放到这里 -->
+            <!-- <div class="side">bbbb</div> -->
+        </div>
+    </div>
+</div>
+<script>
+/**
+ * target _blank
+ */
+(function() {
+    var aTags = document.querySelectorAll('article a:not([id])')
+    for (var i = 0; i < aTags.length; i++) {
+        aTags[i].setAttribute('target', '_blank')
+    }
+}());
+</script>
+<script src="/js/pageContent.js " charset="utf-8"></script>
+
+
+    <footer class="site-footer">
+
+
+    <div class="wrapper">
+
+        <p class="description">
+             Solobear's blog 
+        </p>
+        <p class="contact">
+              More about me @: 
+            <a href="https://github.com/solobearchn" title="GitHub"><i class="fa fa-github" aria-hidden="true"></i></a>  
+            <a href="mailto:zhangxiongchn@foxmail.com" title="email"><i class="fa fa-envelope-o" aria-hidden="true"></i></a>  
+            <a href="http://weibo.com/zhangxiongchn" title="Weibo"><i class="fa fa-weibo" aria-hidden="true"></i></a>  
+            <a href="https://www.zhihu.com/people/bearing-bear" title="Zhihu"><i class="iconfont">&#xe829;</i></a>      
+        </p>
+        <p>
+           本站统计：总访问量<span id="busuanzi_value_site_pv"></span>，访客数<span id="busuanzi_value_site_uv"></span>，阅读量<span id="busuanzi_value_page_pv"></span>
+        </p>
+        <p class="power">
+            <span>
+                Powered by <a href="https://jekyllrb.com/">Jekyll</a> & <a href="https://pages.github.com/">Github Pages</a>.
+            </span>
+            <span>
+                Theme Designed by <a href="https://github.com/Gaohaoyang">HyG</a>.
+            </span>
+        </p>
+    </div>
+</footer>
+<script async src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+    <div class="back-to-top">
+    <a href="#top" class="scroll">
+        <i class="fa fa-arrow-up" aria-hidden="true"></i>
+    </a>
+</div>
+
+    <script src=" /js/main.js " charset="utf-8"></script>
+    <script src=" /js/scroll.min.js " charset="utf-8"></script>
+  </body>
+
+</html>

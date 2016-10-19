@@ -235,7 +235,7 @@ Client和Service之间的通信，依赖Driver驱动，同时也要依赖Service
 **名字查询功能，以及返回Binder Service的引用**。ServiceManager同样依赖Binder机制提供服务，其引用句柄handle=0。SM提供给外部的服务主要是注册服务```addService(sp<IBinder>)```，查询和返回服务```getService(String* name)```等，其接口函数定义在IServiceManager.h中。
 
 ServiceManager的主函数没有依赖libbinder框架，而是自建了一个简单的类似原理的bind.c和主函数:
->frameworks\native\cmds\servicemanager\service_manager.c),
+> frameworks\native\cmds\servicemanager\service_manager.c,
 
 ``` c++
 int main(int argc, char **argv)
@@ -339,7 +339,7 @@ inline sp<IInterface> BnInterface<INTERFACE>::queryLocalInterface(
 
 其中，waitForResponse()是一个死循环，利用```IPC.talkWithDriver()```与驱动之间通信,```IPC.talkWithDriver()```中又调用了```ioctl(mProcess->mDriverFD, BINDER_WRITE_READ, &bwr)```进入与内核，开始于驱动的通信,ioctl调用了内核中的binder.c。
 
-> kernal\drivers\staging\android\binder.c
+> kernel\drivers\staging\android\binder.c
 
 进入ioctl后，经由```binder_thread_write()```中的判断分支进入```binder_transaction()```过程。binder_transaction()内容比较多，主要步骤是：
 
@@ -457,6 +457,7 @@ void IPCThreadState::joinThreadPool(bool isMain)
 **驱动记录了每次Binder调用时的线程ID，唤醒对应的线程读取缓冲区数据**。在Binder机制中，**由内核驱动来处理应用层线程的创建和唤醒**，这和一般的IO模型不同。
 
 ---
+
 ##  总结
 
 以上内容主要是便于**简单、粗暴、直观地**理解进程间通信的基本原理和基本流程，一般资料中翔实的过程代码细节就不涉及了。

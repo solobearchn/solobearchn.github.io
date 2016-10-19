@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Android消息机制与多线程</title>
+    <meta name="description" content="  android中的消息机制android中的消息机制Handler、Looper和MessageQueue:  Message被包装在Looper中，且Looper是线程相关的，每个线程只有一个Looper  UI主线程的启动参见framework中的ActivityThread.java，在main(Str...">
+
+    <link rel="shortcut icon" href="/favicon.ico?" type="image/x-icon">
+    <link rel="icon" href="/favicon.ico?" type="image/x-icon">
+    <link rel="stylesheet" href="/css/fontawesome/css/font-awesome.min.css ">
+    <link rel="stylesheet" href="/css/main.css ">
+    <link rel="canonical" href="http://localhost:4000/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/">
+    <link rel="alternate" type="application/rss+xml" title="Solobear" href="http://localhost:4000/feed.xml ">
+
+
+
+</head>
+
+
+  <body>
+
+    <header id="top">
+    <div class="wrapper">
+        <a href="/" class="brand">Solobear</a>
+        <small>述而不作</small>
+        <button id="headerMenu" class="menu"><i class="fa fa-bars"></i></button>
+        <nav id="headerNav">
+            <ul>
+                <li>
+                    
+                    <a href="/">
+                    
+                        <i class="fa fa-home"></i>Home
+                    </a>
+                </li>
+
+                
+                    
+                    <li>
+                        
+                        <a href="/archive/">
+                        
+                            <i class="fa fa-archive"></i>Archives
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/category/">
+                        
+                            <i class="fa fa-th-list"></i>Categories
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/tag/">
+                        
+                            <i class="fa fa-tags"></i>Tags
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/collection/">
+                        
+                            <i class="fa fa-bookmark"></i>Collections
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/demo/">
+                        
+                            <i class="fa fa-play"></i>Demo
+                        </a>
+                    </li>
+                    
+                
+                    
+                    <li>
+                        
+                        <a href="/about/">
+                        
+                            <i class="fa fa-heart"></i>About
+                        </a>
+                    </li>
+                    
+                
+                    
+                
+                    
+                
+                    
+                
+            </ul>
+        </nav>
+    </div>
+</header>
+
+
+        <div class="page clearfix" post>
+    <div class="left">
+        <h1>Android消息机制与多线程</h1>
+        <div class="label">
+
+            <div class="label-card">
+                <i class="fa fa-calendar"></i>2016-10-17
+            </div>
+
+            <div class="label-card">
+                
+            </div>
+
+            <div class="label-card">
+                
+            </div>
+
+            <div class="label-card">
+            
+
+
+<!-- <span class="point">•</span> -->
+<span class="categories">
+  <i class="fa fa-th-list"></i>
+  
+    
+        <a href="/category/#Android" title="Category: Android" rel="category">Android</a>
+    
+  
+
+  <!-- <span class="point">•</span> -->
+</span>
+
+
+            </div>
+
+            <div class="label-card">
+            
+<!-- <span class="point">•</span> -->
+<span class="pageTag">
+  <i class="fa fa-tags"></i>
+  
+    
+        <!--a href="/tag/#%E6%B6%88%E6%81%AF" title="Tag: 消息" rel="tag">消息</a-->
+        <a href="/tag/#消息" title="Tag: 消息" rel="tag">消息</a>&nbsp;
+    
+        <!--a href="/tag/#%E5%A4%9A%E7%BA%BF%E7%A8%8B" title="Tag: 多线程" rel="tag">多线程</a-->
+        <a href="/tag/#多线程" title="Tag: 多线程" rel="tag">多线程</a>&nbsp;
+    
+        <!--a href="/tag/#AsyncTask" title="Tag: AsyncTask" rel="tag">AsyncTask</a-->
+        <a href="/tag/#AsyncTask" title="Tag: AsyncTask" rel="tag">AsyncTask</a>
+    
+  
+
+</span>
+
+            </div>
+
+        </div>
+        <hr>
+        <article itemscope itemtype="http://schema.org/BlogPosting">
+        <ul id="markdown-toc">
+  <li><a href="#android" id="markdown-toc-android">android中的消息机制</a></li>
+  <li><a href="#asynctask" id="markdown-toc-asynctask">AsyncTask异步框架</a></li>
+  <li><a href="#api23" id="markdown-toc-api23">看看源码(API23)</a></li>
+</ul>
+
+<h2 id="android">android中的消息机制</h2>
+
+<hr />
+
+<p>Handler、Looper和MessageQueue:</p>
+
+<ul>
+  <li>Message被包装在Looper中，且Looper是线程相关的，每个线程只有一个Looper</li>
+  <li>UI主线程的启动参见framework中的ActivityThread.java，在main(String[] args)函数中启动了Looper.loop消息循环</li>
+  <li>新建一个Handler对象后，在Handler类的构造函数中会将Handler对象与所在线程关联，因此Handler对应了所在线程的Looper</li>
+  <li>Handler的sendMessage向所关联的消息队列发送message，message内则包含了对应的消息处理的target:Handler</li>
+  <li>Looper.loop循环中，message执行了回调message.target.dispatchMessage(message),进而调用了使用者所Overrdie的Handler.handleMessage()方法</li>
+</ul>
+
+<hr />
+
+<h2 id="asynctask">AsyncTask异步框架</h2>
+
+<ol>
+  <li>
+    <p>构造函数中的几个泛型参数中：<code class="highlighter-rouge">Params...params</code>是执行<code class="highlighter-rouge">AsyncTask.execute(Params...)</code>时使用的参数，实际上传入<code class="highlighter-rouge">doInBackground(Params...)</code>作为参数;
+<code class="highlighter-rouge">Progress... values</code>表示进度，可在调用<code class="highlighter-rouge">publishProgress(Progress...)</code>时将进度送至主消息循环中；进度同样会传入用户override的<code class="highlighter-rouge">onProgressUpdate(Progress)</code>作为方法参数； <code class="highlighter-rouge">Result result</code>是后台任务方法<code class="highlighter-rouge">doInBackgroun(Params...)</code>的返回值，即任务结果,作为<code class="highlighter-rouge">onPostExecute(Result)</code>方法的参数。</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">new AsyncTask().execute(Params...params)</code>:UI线程中调用，触发异步任务AsyncTask</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">@Override onPreExecute()</code>:在UI线程中执行，异步任务启动前的准备工作</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">@Override doInBackground(Params...)</code>:在任务子线程中执行，通常用于理耗时任务。在此方法中用户可以自行调用
+<code class="highlighter-rouge">publishProgress(Progress...)</code>，发送<code class="highlighter-rouge">MESSAGE_POST_PROGRESS</code>消息至主线程，进而触发主线程中的方法<code class="highlighter-rouge">onProgressUpdate(Progress...)</code></p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">@Override onProgressUpdate(Progress...)</code>:后台任务调用了<code class="highlighter-rouge">publishProgress()</code>后，主线程对消息的回应处理，可用于更新UI</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">@Override onPostExecute(Result)</code>:任务子线程执行完毕后触发结束消息的处理方法，收尾工作。</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="api23">看看源码(API23)</h2>
+
+<p>AsyncTask将Handler、Looper和MessageQueuq进行了包装，用线程池执行后台任务。因此主要来看后台任务
+<strong>FutureTask</strong>、消息处理
+<strong>Handler</strong>以及
+<strong>ThreadPoolExecutor</strong>是如何设计的：</p>
+
+<ul>
+  <li>
+    <p>Handler：</p>
+
+    <p>构造了InternalHandler, 其构造函数获取MainLoop，即Handler是和主线程消息循环绑定的。消息处理方法<code class="highlighter-rouge">handleMessage</code>则对<code class="highlighter-rouge">MESSAGE_POST_RESULT</code>和<code class="highlighter-rouge">MESSAGE_POST_PROGRESS</code>消息做出了响应。</p>
+  </li>
+  <li>
+    <p>FutureTask</p>
+
+    <p>AsyncTask构造函数创建了Callable类型的对象
+<strong>mWorker</strong>,call()方法则包装了<code class="highlighter-rouge">doInBackGround()</code>方法，<code class="highlighter-rouge">postResult()</code>方法得到result并发送MESSAGE_POST_RESULT消息。当然，在doInBackground中则可以调用<code class="highlighter-rouge">publishProgress(Progress...)</code>。mWorker用于构造FutureTask类型
+<strong>mFuture</strong>。mFuture就是任务执行体了。</p>
+
+    <p>比较了几个版本的源码之后，我发现API22之后，Handler的创建是在mWorker 的call()方法中的<code class="highlighter-rouge">postResult()</code>方法中完成的, 采用了单例模式的<code class="highlighter-rouge">getHandler()</code>创建/获取InternalHandler。早期的版本(Android5.0)则在类的静态成员中就已经创建此Handler对象。尽管这里Handler的创建在子线程，但是由于其构造函数与主线程Looper绑定，因此消息处理仍然在主线程完成。</p>
+  </li>
+  <li>
+    <p>executors相关</p>
+
+    <p>用户在主线程中调用execute(Params…parms)后，实际上执行了<code class="highlighter-rouge">executeOnExecutor(sDefaultExecutor, params)</code>，此方法内首先执行<code class="highlighter-rouge">onPreExecute()</code>，随后则是<strong>执行任务过</strong>程：<strong><code class="highlighter-rouge">sDefaultExecutor.execute(mFuture)</code></strong>。</p>
+
+    <p>再来看看<code class="highlighter-rouge">sDefaultExecutors</code>, 这是一个<code class="highlighter-rouge">SerialExecutor</code>类的实例，其<code class="highlighter-rouge">execute()</code>方法用于维持一个任务队列，并将将Runnable放入mTasks队尾，随后Poll一个task送入<code class="highlighter-rouge">THREAD_POOL_EXECUTOR</code>执行。也就是说<code class="highlighter-rouge">sDefaultExecutors</code>只起到维护任务队列的过程，<strong>真正的执行体还是<code class="highlighter-rouge">THREAD_POOL_EXECUTOR</code></strong>，这是一个线程池<code class="highlighter-rouge">new ThreadPoolExecutor(...)</code></p>
+
+    <p>值得注意的是，尽管将任务送入了线程池<code class="highlighter-rouge">THREAD_POOL_EXECUTOR</code>，但是<code class="highlighter-rouge">SerialExecutor.execute()</code>方法使用了同步锁，实质上是一个线性入队执行的单线程过程，从类名上也是可以看出来的：<code class="highlighter-rouge">public synchronized void execute(final Runnable r)</code>，即使多个线程提交任务，也得一个一个来。这也是android3.0之后的变化，旧版本的AsyncTask是支持在线程池中多任务并发的。</p>
+
+    <p>线程池的执行过程不再赘述，submit()和execute()最终都是调用了callable的call()方法。call()过程中发送的两类消息则可以被InternalHandler获取并得到相应处理。</p>
+  </li>
+</ul>
+
+        </article>
+        <hr>
+
+        
+        
+            
+            
+                
+                    
+                
+                    
+                
+                    
+                
+            
+                
+                    
+                
+                    
+                
+                    
+                
+            
+                
+                    
+                
+                    
+                
+                    
+                
+            
+                
+                    
+                
+                    
+                        
+                        <h2 id="similar_posts">Similar Posts</h2>
+                        <ul>
+                        
+                        <li class="relatedPost">
+                            <a href="http://localhost:4000/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/">Android Binder机制浅析
+                            
+                            </a>
+                        </li>
+                        
+                        
+                    
+                
+                    
+                
+            
+        
+            
+            
+                
+                    
+                
+                    
+                
+                    
+                
+            
+        
+        
+            </ul>
+        
+
+        <div class="post-recent">
+    <div class="pre">
+        
+        <p><strong>上一篇</strong> <a href="/2016/10/17/welcome/">第一篇博客</a></p>
+        
+    </div>
+    <div class="nex">
+
+        
+        <p><strong>下一篇</strong> <a href="/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/">Android Binder机制浅析</a></p>
+        
+    </div>
+</div>
+
+
+        
+        <h2 id="comments">Comments</h2>
+        
+<!-- 多说评论框 start -->
+<div class="ds-thread" data-thread-key="http://localhost:4000/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/" data-title="Android消息机制与多线程" data-url="http://localhost:4000/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/"></div>
+<!-- 多说评论框 end -->
+<!-- 多说公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    var duoshuoQuery = {
+        short_name: "solobearchn"
+    };
+    (function() {
+        var ds = document.createElement('script');
+        ds.type = 'text/javascript';
+        ds.async = true;
+        ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+        ds.charset = 'UTF-8';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds);
+    })();
+</script>
+<!-- 多说公共JS代码 end -->
+
+
+
+
+        
+
+
+    </div>
+    <button class="anchor"><i class="fa fa-anchor"></i></button>
+    <div class="right">
+        <div class="wrap">
+
+            <!-- Content -->
+            <div class="side content">
+                <div>
+                    Content
+                </div>
+                <ul id="content-side" class="content-ul">
+                    <li><a href="#similar_posts">Similar Posts</a></li>
+                    <li><a href="#comments">Comments</a></li>
+                </ul>
+            </div>
+            <!-- 其他div框放到这里 -->
+            <!-- <div class="side">bbbb</div> -->
+        </div>
+    </div>
+</div>
+<script>
+/**
+ * target _blank
+ */
+(function() {
+    var aTags = document.querySelectorAll('article a:not([id])')
+    for (var i = 0; i < aTags.length; i++) {
+        aTags[i].setAttribute('target', '_blank')
+    }
+}());
+</script>
+<script src="/js/pageContent.js " charset="utf-8"></script>
+
+
+    <footer class="site-footer">
+
+
+    <div class="wrapper">
+
+        <p class="description">
+             Solobear's blog 
+        </p>
+        <p class="contact">
+              More about me @: 
+            <a href="https://github.com/solobearchn" title="GitHub"><i class="fa fa-github" aria-hidden="true"></i></a>  
+            <a href="mailto:zhangxiongchn@foxmail.com" title="email"><i class="fa fa-envelope-o" aria-hidden="true"></i></a>  
+            <a href="http://weibo.com/zhangxiongchn" title="Weibo"><i class="fa fa-weibo" aria-hidden="true"></i></a>  
+            <a href="https://www.zhihu.com/people/bearing-bear" title="Zhihu"><i class="iconfont">&#xe829;</i></a>      
+        </p>
+        <p>
+           本站统计：总访问量<span id="busuanzi_value_site_pv"></span>，访客数<span id="busuanzi_value_site_uv"></span>，阅读量<span id="busuanzi_value_page_pv"></span>
+        </p>
+        <p class="power">
+            <span>
+                Powered by <a href="https://jekyllrb.com/">Jekyll</a> & <a href="https://pages.github.com/">Github Pages</a>.
+            </span>
+            <span>
+                Theme Designed by <a href="https://github.com/Gaohaoyang">HyG</a>.
+            </span>
+        </p>
+    </div>
+</footer>
+<script async src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+    <div class="back-to-top">
+    <a href="#top" class="scroll">
+        <i class="fa fa-arrow-up" aria-hidden="true"></i>
+    </a>
+</div>
+
+    <script src=" /js/main.js " charset="utf-8"></script>
+    <script src=" /js/scroll.min.js " charset="utf-8"></script>
+  </body>
+
+</html>

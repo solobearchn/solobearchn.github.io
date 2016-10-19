@@ -448,9 +448,7 @@ void IPCThreadState::joinThreadPool(bool isMain)
 
 对于进程间通信，最想了解的不外乎最直观的两点：**数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的**，这两点背后的机制在于Binder驱动层的**mmap共享内存、红黑树节点和引用的维护**。理解了以上两点后，剩下的不过是梳理应用层libbinder构建的与底层驱动通信的模型，这其中涉及类与接口的设计、Binder调用事务过程以及多线程。
 
-*   本文[链接](https://solobearchn.github.io/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/)
-*   我的[Github](https://github.com/solobearchn) ID:solobearchn
-*   我的[博客](https://solobearchn.github.io/)
+本文链接:https://solobearchn.github.io/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/，我的Github:solobearchn.github.io
 
 ---
 

@@ -114,9 +114,236 @@
         <div class="page clearfix" index>
     <div class="left">
         <h1>Solobear's notes as blogs</h1>
-        <small>一把刀的锋刃很难越过，所以智者说得救之道是困难的</small>
+        <small>一把刀的锋刃很不容易越过，因此智者说得救之道是困难的</small>
         <hr>
         <ul>
+            
+              <li>
+                <h2>
+                  <a class="post-link" href="/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/">Android Binder机制浅析</a>
+                </h2>
+                <div class="label">
+                    <div class="label-card">
+                        <i class="fa fa-calendar"></i>2016-10-17
+                    </div>
+                    <div class="label-card">
+                        
+                    </div>
+                    <div class="label-card">
+                        
+                    </div>
+
+                    <div class="label-card">
+                    
+
+
+<!-- <span class="point">•</span> -->
+<span class="categories">
+  <i class="fa fa-th-list"></i>
+  
+    
+        <a href="/category/#Android" title="Category: Android" rel="category">Android</a>
+    
+  
+
+  <!-- <span class="point">•</span> -->
+</span>
+
+
+                    </div>
+
+                    <div class="label-card">
+                    
+<!-- <span class="point">•</span> -->
+<span class="pageTag">
+  <i class="fa fa-tags"></i>
+  
+    
+        <a href="/tag/#IPC" title="Tag: IPC" rel="tag">IPC</a>&nbsp;
+    
+        <a href="/tag/#Binder" title="Tag: Binder" rel="tag">Binder</a>&nbsp;
+    
+        <a href="/tag/#Service" title="Tag: Service" rel="tag">Service</a>&nbsp;
+    
+        <a href="/tag/#多线程" title="Tag: 多线程" rel="tag">多线程</a>
+    
+  
+
+</span>
+
+                    </div>
+                </div>
+                <div class="excerpt">
+                    <ul id="markdown-toc">
+  <li><a href="#binder" id="markdown-toc-binder">Binder机制：驱动与数据传输</a></li>
+</ul>
+
+<p>笔记：简单、直观、透彻地理解Android Binder进程间通信的基本原理和基本流程：数据在进程间是怎样流动传输的，客户端是怎样拿到服务端的接口的。</p>
+
+<h2 id="binder">Binder机制：驱动与数据传输</h2>
+
+<p>Android中的Binder机制涉及Java应用层、Native应用层（libbinder、C++）和Linux内核层（binder driver，C），其中Java层是对C++ Native层的包装，而应用层进程之间的通信则最终通过内核中的驱动Binder dirver完成。这种跨进程调用，进程之间的数据必须放在内核空间然后等待。</p>
+
+<p><img src="http://img.my.csdn.net/uploads/201610/14/1476404610_9170.png" alt="image" /></p>
+
+<p>Binder机制作为Android的进程间通信方式(IPC)，采用mmap共享内存方式，应用层直接从与kernel共享的缓冲区读取，只产生一次读写提高了数据传输效率。其实质是在Client-Server之间利用虚拟的字符设备/dev/binder作为CS两端的数据传输中介。应用层（Client、Server）的通信是
+<strong>通过与driver的IO</strong>实现的：Client与Driver设备IO，Server则轮询Driver中的数据，并将结果反馈至Driver，Client再从Driver中读取结果。当然这里的Server通信依赖Binder机制，是一个Binder类型的Service。</p>
+
+
+                </div>
+                <div class="read-all">
+                    <a  href="/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/"><i class="fa fa-newspaper-o"></i>Read All</a>
+                </div>
+                <hr>
+              </li>
+            
+              <li>
+                <h2>
+                  <a class="post-link" href="/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/">Android消息机制与多线程</a>
+                </h2>
+                <div class="label">
+                    <div class="label-card">
+                        <i class="fa fa-calendar"></i>2016-10-17
+                    </div>
+                    <div class="label-card">
+                        
+                    </div>
+                    <div class="label-card">
+                        
+                    </div>
+
+                    <div class="label-card">
+                    
+
+
+<!-- <span class="point">•</span> -->
+<span class="categories">
+  <i class="fa fa-th-list"></i>
+  
+    
+        <a href="/category/#Android" title="Category: Android" rel="category">Android</a>
+    
+  
+
+  <!-- <span class="point">•</span> -->
+</span>
+
+
+                    </div>
+
+                    <div class="label-card">
+                    
+<!-- <span class="point">•</span> -->
+<span class="pageTag">
+  <i class="fa fa-tags"></i>
+  
+    
+        <a href="/tag/#消息" title="Tag: 消息" rel="tag">消息</a>&nbsp;
+    
+        <a href="/tag/#多线程" title="Tag: 多线程" rel="tag">多线程</a>&nbsp;
+    
+        <a href="/tag/#AsyncTask" title="Tag: AsyncTask" rel="tag">AsyncTask</a>
+    
+  
+
+</span>
+
+                    </div>
+                </div>
+                <div class="excerpt">
+                    <ul id="markdown-toc">
+  <li><a href="#android" id="markdown-toc-android">android中的消息机制</a></li>
+</ul>
+
+<h2 id="android">android中的消息机制</h2>
+
+<hr />
+
+<p>Handler、Looper和MessageQueue:</p>
+
+<ul>
+  <li>Message被包装在Looper中，且Looper是线程相关的，每个线程只有一个Looper</li>
+  <li>UI主线程的启动参见framework中的ActivityThread.java，在main(String[] args)函数中启动了Looper.loop消息循环</li>
+  <li>新建一个Handler对象后，在Handler类的构造函数中会将Handler对象与所在线程关联，因此Handler对应了所在线程的Looper</li>
+  <li>Handler的sendMessage向所关联的消息队列发送message，message内则包含了对应的消息处理的target:Handler</li>
+  <li>Looper.loop循环中，message执行了回调message.target.dispatchMessage(message),进而调用了使用者所Overrdie的Handler.handleMessage()方法</li>
+</ul>
+
+<hr />
+
+
+                </div>
+                <div class="read-all">
+                    <a  href="/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/"><i class="fa fa-newspaper-o"></i>Read All</a>
+                </div>
+                <hr>
+              </li>
+            
+              <li>
+                <h2>
+                  <a class="post-link" href="/2016/10/17/welcome/">第一篇博客</a>
+                </h2>
+                <div class="label">
+                    <div class="label-card">
+                        <i class="fa fa-calendar"></i>2016-10-17
+                    </div>
+                    <div class="label-card">
+                        
+                    </div>
+                    <div class="label-card">
+                        
+                    </div>
+
+                    <div class="label-card">
+                    
+
+
+<!-- <span class="point">•</span> -->
+<span class="categories">
+  <i class="fa fa-th-list"></i>
+  
+    
+        <a href="/category/#Blogs" title="Category: Blogs" rel="category">Blogs</a>
+    
+  
+
+  <!-- <span class="point">•</span> -->
+</span>
+
+
+                    </div>
+
+                    <div class="label-card">
+                    
+<!-- <span class="point">•</span> -->
+<span class="pageTag">
+  <i class="fa fa-tags"></i>
+  
+    
+        <a href="/tag/#murmurs" title="Tag: murmurs" rel="tag">murmurs</a>
+    
+  
+
+</span>
+
+                    </div>
+                </div>
+                <div class="excerpt">
+                    <ul id="markdown-toc">
+  <li><a href="#section" id="markdown-toc-section">博客模板</a></li>
+</ul>
+
+<h2 id="section">博客模板</h2>
+
+<p>使用了<a href="https://github.com/Gaohaoyang">Gaohaoyang</a>的Jekyll模板。说来也巧，高浩阳是我同一级的校友，当年在人人网上很出名，玩儿校园民谣的。</p>
+
+
+                </div>
+                <div class="read-all">
+                    <a  href="/2016/10/17/welcome/"><i class="fa fa-newspaper-o"></i>Read All</a>
+                </div>
+                <hr>
+              </li>
             
         </ul>
 
@@ -128,7 +355,7 @@
             <span class="previous disable"><i class="fa fa-angle-double-left"></i></span>
             <span class="previous disable"><i class="fa fa-angle-left"></i></span>
           
-          <span class="page_number ">/</span>
+          <span class="page_number ">1/1</span>
           
             <span class="next disable"><i class="fa fa-angle-right"></i></span>
             <span class="next disable"><i class="fa fa-angle-double-right"></i></span>
@@ -145,6 +372,12 @@
                 </div>
                 <ul class="content-ul" recent>
                     
+                        <li><a href="/2016/10/17/Android-Binder%E6%9C%BA%E5%88%B6%E6%B5%85%E6%9E%90/">Android Binder机制浅析</a></li>
+                    
+                        <li><a href="/2016/10/17/Android%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%AC%94%E8%AE%B0/">Android消息机制与多线程</a></li>
+                    
+                        <li><a href="/2016/10/17/welcome/">第一篇博客</a></li>
+                    
                 </ul>
             </div>
 
@@ -155,6 +388,24 @@
                     Categories
                 </div>
                 <ul class="content-ul" cate>
+                    
+                    <li>
+                        <a href="/category/#Blogs" class="categories-list-item" cate="Blogs">
+                            <span class="name">
+                                Blogs
+                            </span>
+                            <span class="badge">1</span>
+                        </a>
+                    </li>
+                    
+                    <li>
+                        <a href="/category/#Android" class="categories-list-item" cate="Android">
+                            <span class="name">
+                                Android
+                            </span>
+                            <span class="badge">2</span>
+                        </a>
+                    </li>
                     
                 </ul>
             </div>
@@ -172,6 +423,55 @@
 
                     
 
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#murmurs" style="font-size: 9pt; color: #999;">murmurs</a>
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#消息" style="font-size: 9pt; color: #999;">消息</a>
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#多线程" style="font-size: 18pt; color: #000;">多线程</a>
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#AsyncTask" style="font-size: 9pt; color: #999;">AsyncTask</a>
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#IPC" style="font-size: 9pt; color: #999;">IPC</a>
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#Binder" style="font-size: 9pt; color: #999;">Binder</a>
+                    
+                      
+                      
+                      
+                      
+                      
+                      <a href="/tag/#Service" style="font-size: 9pt; color: #999;">Service</a>
                     
                 </div>
             </div>
@@ -205,7 +505,7 @@
             <a href="https://github.com/solobearchn" title="GitHub"><i class="fa fa-github" aria-hidden="true"></i></a>  
             <a href="mailto:zhangxiongchn@foxmail.com" title="email"><i class="fa fa-envelope-o" aria-hidden="true"></i></a>  
             <a href="http://weibo.com/zhangxiongchn" title="Weibo"><i class="fa fa-weibo" aria-hidden="true"></i></a>  
-            <a href="https://www.zhihu.com/people/张雄" title="Zhihu"><i class="iconfont">&#xe829;</i></a>      
+            <a href="https://www.zhihu.com/people/bearing-bear" title="Zhihu"><i class="iconfont">&#xe829;</i></a>      
         </p>
         <p>
            本站统计：总访问量<span id="busuanzi_value_site_pv"></span>，访客数<span id="busuanzi_value_site_uv"></span>，阅读量<span id="busuanzi_value_page_pv"></span>
